@@ -37,7 +37,7 @@ node scripts/harness-config.mjs
 npx @deepseek-ai/dsh@0.2.1-rc.2 web --patch "$PWD/harness.local.yaml"
 ```
 
-The patch points to this checkout's compiled plugin, installed Python interpreter and project root. Keep this checkout and its `node_modules` present. Regenerate the patch after moving it. This is a local external plugin, not a published npm bundle.
+The patch points to this checkout's compiled plugin, installed Python interpreter and project root. Keep this checkout and its `node_modules` present. Regenerate the patch after moving it. This is a local external plugin, not a published npm bundle. The plugin config accepts `root`, `python`, `timeoutMs` and `artifactsDir` (default `artifacts`, resolved inside the project root).
 
 Configure the LLM provider in Harness, then ask:
 
@@ -47,7 +47,11 @@ Then:
 
 > Use the parameters.yaml from the returned revision, change height to 45 mm, and record the reason Increase clearance. Report the new measured dimensions and history.
 
-A successful call returns a structured result: revision, parent, measured bounds and volume, per-check booleans, hole boundary circles and artifact paths. The model sees a readable summary rather than raw JSON. Failures carry a stable code — `VALIDATION`, `PATH`, `TIMEOUT`, `ABORTED`, `LOCK`, `EXPORT`, `GEOMETRY`, `IO` or `ENGINE` — alongside a human-readable message.
+Two read-only tools support follow-up questions without rebuilding: `openengineer_list_revisions` returns every committed revision with parent, reason, bounds and check status, and `openengineer_inspect_revision` returns one revision's parameters, changes, hashes, artifact paths and full report. Ask:
+
+> List the committed revisions, then inspect the latest one and summarise its dimensions and assumptions.
+
+A successful call returns a structured result: revision, parent, measured bounds and volume, per-check booleans, hole boundary circles and artifact paths. The model sees a readable summary rather than raw JSON. Failures carry a stable code — `VALIDATION`, `PATH`, `TIMEOUT`, `ABORTED`, `LOCK`, `EXPORT`, `GEOMETRY`, `IO`, `NOT_FOUND` or `ENGINE` — alongside a human-readable message.
 
 The plugin uses the provider configured in Harness; OpenEngineer does not implement provider adapters or require its own API key. The automated integration test invokes the real Harness registry without an LLM or Web UI. Live provider selection and natural-language behavior are **not yet acceptance-tested**.
 

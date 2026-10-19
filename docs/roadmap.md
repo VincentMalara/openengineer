@@ -18,7 +18,7 @@ Le contrat à ne pas casser : **aucune donnée inventée silencieusement, aucune
 | Priorité | Chantier | Effort | Dépend de |
 |---|---|---|---|
 | P0 | Dépôt partageable : commit, licence, CI verte | S | — |
-| P1 | Contrat du plugin : sortie lisible, erreurs typées, tests manquants | M | P0 |
+| P1 | Contrat du plugin : sortie lisible, erreurs typées, outils de lecture | M | P0 |
 | P2 | Acceptance réelle avec un provider LLM | S | P1 |
 | P3 | Robustesse et portabilité (Windows, reprise après crash, intégrité) | M | P1 |
 | P4 | Deuxième pièce, schéma enrichi, aperçu, exports fabrication | L | P2 |
@@ -43,7 +43,7 @@ Effort indicatif : S < 1 jour, M = 1 à 3 jours, L = 1 à 2 semaines.
 ## P1 — Fermer le contrat du plugin
 
 - [x] Remplacer le retour `string` (JSON brut) par un objet structuré avec un `render` lisible : révision, dimensions mesurées, checks, chemins.
-- [x] Introduire des erreurs typées exploitables par l'agent : `VALIDATION`, `PATH`, `TIMEOUT`, `ABORTED`, `LOCK`, `EXPORT`, `GEOMETRY`, `IO`, `ENGINE`, re-levées en `HarnessError`.
+- [x] Introduire des erreurs typées exploitables par l'agent : `VALIDATION`, `PATH`, `TIMEOUT`, `ABORTED`, `LOCK`, `EXPORT`, `GEOMETRY`, `IO`, `NOT_FOUND`, `ENGINE`, re-levées en `HarnessError`.
 - [x] Compléter les tests de robustesse :
   - [x] timeout et annulation (`AbortSignal`) : le processus Python est bien terminé ;
   - [x] entrée > 1 Mo et `reason` vide ;
@@ -51,9 +51,9 @@ Effort indicatif : S < 1 jour, M = 1 à 3 jours, L = 1 à 2 semaines.
   - [x] mode CLI classique (`--input/--output/--reason/--set`) ;
   - [x] verrou relâché après échec ;
   - [x] aucune révision publiée si l'import STEP échoue.
-- [ ] Rendre le dossier de sortie configurable (`artifactsDir`) au lieu du `artifacts` codé en dur, avec confinement à la racine.
+- [x] Rendre le dossier de sortie configurable (`artifactsDir`), avec confinement à la racine.
+- [x] Ajouter des outils de lecture sans rebuild : `openengineer_list_revisions` et `openengineer_inspect_revision` (record, rapport, paramètres).
 - [ ] Permettre l'édition des trous : soit un override `holes`, soit un outil dédié. Aujourd'hui seuls les 4 paramètres scalaires sont modifiables, les trous exigent une édition manuelle du YAML.
-- [ ] Ajouter des outils de lecture sans rebuild : `openengineer_list_revisions` et `openengineer_inspect_revision` (record, rapport, paramètres).
 - [ ] Documenter le schéma YAML comme contrat public (version de schéma, champs, invariants).
 
 **Critère d'acceptation** : depuis le chat, l'agent peut construire, modifier, lister et inspecter une révision sans parser de JSON brut, et chaque échec produit un code d'erreur stable.
@@ -114,7 +114,7 @@ Effort indicatif : S < 1 jour, M = 1 à 3 jours, L = 1 à 2 semaines.
 ## Ordre recommandé pour les 3 prochaines actions
 
 1. Acceptance réelle dans la Web UI.
-2. Rendre le dossier de sortie configurable, puis l'édition des trous et les outils de lecture.
+2. Édition des trous, puis documentation du schéma YAML.
 3. Deuxième recette **ou** aperçu visuel (selon la démo visée).
 
 ## Risques principaux

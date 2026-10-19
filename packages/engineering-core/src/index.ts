@@ -1,8 +1,8 @@
 import { execFile, type ExecFileException } from 'node:child_process';
-import { realpath, mkdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-export interface EngineConfig { root: string; python: string; timeoutMs: number }
+export interface EngineConfig { root: string; python: string; timeoutMs: number; artifactsDir?: string }
 export interface BuildRequest { input: string; reason: string; length?: number; width?: number; height?: number; thickness?: number }
 
 export type EngineErrorCode =
@@ -14,11 +14,14 @@ export type EngineErrorCode =
   | 'EXPORT'
   | 'GEOMETRY'
   | 'IO'
+  | 'NOT_FOUND'
   | 'ENGINE';
 
 const ENGINE_ERROR_CODES: ReadonlySet<string> = new Set<EngineErrorCode>([
-  'VALIDATION', 'PATH', 'TIMEOUT', 'ABORTED', 'LOCK', 'EXPORT', 'GEOMETRY', 'IO', 'ENGINE',
+  'VALIDATION', 'PATH', 'TIMEOUT', 'ABORTED', 'LOCK', 'EXPORT', 'GEOMETRY', 'IO', 'NOT_FOUND', 'ENGINE',
 ]);
+
+const REVISION_ID = /^revision-\d{6}-[0-9a-f]{8}$/;
 
 /** Stable, machine-routable failure raised by the engineering core. */
 export class EngineError extends Error {
@@ -66,6 +69,50 @@ export interface BuildResult {
   changes: Record<string, Json>;
 }
 
+export interface RevisionSummary {
+  revision: string;
+  parent: string | null;
+  timestamp: string;
+  reason: string;
+  bounds_mm: number[];
+  volume_mm3: number;
+  checks_passed: boolean;
+  directory: string;
+}
+
+export interface RevisionList {
+  artifacts_directory: string;
+  revisions: RevisionSummary[];
+}
+
+export interface RevisionDetail {
+  revision: string;
+  parent: string | null;
+  timestamp: string;
+  reason: string;
+  directory: string;
+  parameters: Json;
+  changes: Json;
+  bounds_mm: number[];
+  volume_mm3: number;
+  checks: BracketChecks;
+  sources: { source_sha256: string; step_sha256: string };
+  report: string;
+  artifacts: BuildArtifacts;
+}
+
+interface StoredRecord {
+  id?: unknown;
+  parent?: unknown;
+  timestamp?: unknown;
+  reason?: unknown;
+  parameters?: Json;
+  changes?: Json;
+  source_sha256?: unknown;
+  step_sha256?: unknown;
+  validation?: { step_roundtrip?: BracketValidation };
+}
+
 interface EngineResult {
   revision: string;
   parent?: string | null;
@@ -89,6 +136,14 @@ function contained(root: string, path: string): void {
   }
 }
 
+async function resolveRoot(config: EngineConfig): Promise<string> {
+  try {
+    return await realpath(config.root);
+  } catch (error) {
+    throw new EngineError('IO', `Project root not found: ${config.root}`, { cause: error });
+  }
+}
+
 async function resolveInside(root: string, target: string, label: string): Promise<string> {
   let resolved: string;
   try {
@@ -98,6 +153,86 @@ async function resolveInside(root: string, target: string, label: string): Promi
   }
   contained(root, resolved);
   return resolved;
+}
+
+function isNotFound(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
+}
+
+/**
+ * Resolve the artifacts directory under the project root. The lexical check
+ * rejects `..` escapes, and `realpath` rejects symlinks pointing outside.
+ * Returns null when the directory does not exist and `create` is false.
+ */
+async function resolveArtifactsDir(root: string, config: EngineConfig, create: boolean): Promise<string | null> {
+  const candidate = resolve(root, config.artifactsDir ?? 'artifacts');
+  contained(root, candidate);
+  if (create) {
+    try {
+      await mkdir(candidate, { recursive: true });
+    } catch (error) {
+      throw new EngineError('IO', `Cannot create output directory: ${candidate}`, { cause: error });
+    }
+  }
+  try {
+    const resolved = await realpath(candidate);
+    contained(root, resolved);
+    return resolved;
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw new EngineError('IO', `Cannot resolve output directory: ${candidate}`, { cause: error });
+  }
+}
+
+async function readRecord(directory: string, revision: string): Promise<StoredRecord> {
+  const path = join(directory, 'record.json');
+  let raw: string;
+  try {
+    raw = await readFile(path, 'utf8');
+  } catch (error) {
+    throw new EngineError('IO', `Cannot read revision record: ${path}`, { cause: error });
+  }
+  let record: StoredRecord;
+  try {
+    record = JSON.parse(raw) as StoredRecord;
+  } catch (error) {
+    throw new EngineError('ENGINE', `Invalid JSON in revision record: ${path}`, { cause: error });
+  }
+  if (record.id !== revision) {
+    throw new EngineError('ENGINE', `Revision record does not match its directory: ${path}`);
+  }
+  return record;
+}
+
+function validated(record: StoredRecord): BracketValidation {
+  const validation = record.validation?.step_roundtrip;
+  if (
+    validation === undefined
+    || !Array.isArray(validation.bounding_mm)
+    || typeof validation.volume_mm3 !== 'number'
+    || validation.checks === null
+    || typeof validation.checks !== 'object'
+  ) {
+    throw new EngineError('ENGINE', `Revision ${String(record.id)} has no validation record`);
+  }
+  return validation;
+}
+
+function summary(record: StoredRecord, directory: string): RevisionSummary {
+  const validation = validated(record);
+  if (typeof record.timestamp !== 'string' || typeof record.reason !== 'string') {
+    throw new EngineError('ENGINE', `Revision ${String(record.id)} has an incomplete record`);
+  }
+  return {
+    revision: String(record.id),
+    parent: typeof record.parent === 'string' ? record.parent : null,
+    timestamp: record.timestamp,
+    reason: record.reason,
+    bounds_mm: validation.bounding_mm,
+    volume_mm3: validation.volume_mm3,
+    checks_passed: Object.values(validation.checks).every(Boolean),
+    directory,
+  };
 }
 
 function normalizeCode(code: string | undefined): EngineErrorCode {
@@ -173,20 +308,10 @@ export async function buildBracket(
   request: BuildRequest,
   signal?: AbortSignal,
 ): Promise<BuildResult> {
-  let root: string;
-  try {
-    root = await realpath(config.root);
-  } catch (error) {
-    throw new EngineError('IO', `Project root not found: ${config.root}`, { cause: error });
-  }
+  const root = await resolveRoot(config);
   const input = await resolveInside(root, resolve(root, request.input), 'Input');
-  const outputPath = resolve(root, 'artifacts');
-  try {
-    await mkdir(outputPath, { recursive: true });
-  } catch (error) {
-    throw new EngineError('IO', `Cannot create output directory: ${outputPath}`, { cause: error });
-  }
-  const output = await resolveInside(root, outputPath, 'Output directory');
+  const output = await resolveArtifactsDir(root, config, true);
+  if (output === null) throw new EngineError('IO', 'Output directory could not be created');
   const overrides = Object.fromEntries(['length', 'width', 'height', 'thickness']
     .filter(key => request[key as keyof BuildRequest] !== undefined)
     .map(key => [key, request[key as keyof BuildRequest]]));
@@ -209,4 +334,75 @@ export async function buildBracket(
     child.stdin?.on('error', () => { /* execFile callback reports process failures */ });
     child.stdin?.end(JSON.stringify({ input, output, reason: request.reason, overrides }));
   });
+}
+
+export async function listRevisions(config: EngineConfig): Promise<RevisionList> {
+  const root = await resolveRoot(config);
+  const output = await resolveArtifactsDir(root, config, false);
+  if (output === null) {
+    return { artifacts_directory: resolve(root, config.artifactsDir ?? 'artifacts'), revisions: [] };
+  }
+  let entries;
+  try {
+    entries = await readdir(output, { withFileTypes: true });
+  } catch (error) {
+    throw new EngineError('IO', `Cannot list output directory: ${output}`, { cause: error });
+  }
+  const revisions: RevisionSummary[] = [];
+  for (const entry of entries.filter(item => item.isDirectory() && REVISION_ID.test(item.name)).sort((a, b) => a.name.localeCompare(b.name))) {
+    const directory = join(output, entry.name);
+    const record = await readRecord(directory, entry.name);
+    revisions.push(summary(record, directory));
+  }
+  return { artifacts_directory: output, revisions };
+}
+
+export async function inspectRevision(config: EngineConfig, revision: string): Promise<RevisionDetail> {
+  if (!REVISION_ID.test(revision)) {
+    throw new EngineError('VALIDATION', `Invalid revision id: ${revision}`);
+  }
+  const root = await resolveRoot(config);
+  const output = await resolveArtifactsDir(root, config, false);
+  if (output === null) {
+    throw new EngineError('NOT_FOUND', `No revisions exist in ${resolve(root, config.artifactsDir ?? 'artifacts')}`);
+  }
+  const directory = join(output, revision);
+  let resolved: string;
+  try {
+    resolved = await realpath(directory);
+  } catch (error) {
+    throw new EngineError('NOT_FOUND', `Revision not found: ${revision}`, { cause: error });
+  }
+  contained(output, resolved);
+  const record = await readRecord(resolved, revision);
+  const validation = validated(record);
+  let report: string;
+  try {
+    report = await readFile(join(resolved, 'report.md'), 'utf8');
+  } catch (error) {
+    throw new EngineError('IO', `Cannot read revision report: ${join(resolved, 'report.md')}`, { cause: error });
+  }
+  return {
+    revision,
+    parent: typeof record.parent === 'string' ? record.parent : null,
+    timestamp: typeof record.timestamp === 'string' ? record.timestamp : '',
+    reason: typeof record.reason === 'string' ? record.reason : '',
+    directory: resolved,
+    parameters: record.parameters ?? {},
+    changes: record.changes ?? {},
+    bounds_mm: validation.bounding_mm,
+    volume_mm3: validation.volume_mm3,
+    checks: validation.checks,
+    sources: {
+      source_sha256: typeof record.source_sha256 === 'string' ? record.source_sha256 : '',
+      step_sha256: typeof record.step_sha256 === 'string' ? record.step_sha256 : '',
+    },
+    report,
+    artifacts: {
+      step: join(resolved, 'part.step'),
+      parameters: join(resolved, 'parameters.yaml'),
+      record: join(resolved, 'record.json'),
+      report: join(resolved, 'report.md'),
+    },
+  };
 }
