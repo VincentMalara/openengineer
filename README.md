@@ -73,12 +73,16 @@ Slice 1 covers single parts:
 - `cad_part_create/list/get/rebuild/set_material`, `cad_material_list`.
 - `cad_feature_extrude` — rectangle, circle or polygon on XY, XZ or YZ. Profile coordinates are centred on the plane origin unless `center` is given; the first extrude must be `add`.
 - `cad_feature_hole` — through or blind hole along −Z from the top of the part.
-- `cad_feature_fillet` — all edges, edges parallel to an axis, or edges inside a box.
+- `cad_feature_fillet` — all edges, edges parallel to an axis, edges inside a box, circular edges, or hole edges.
+- `cad_feature_chamfer` — same selectors as fillet; `{ "kind": "holes", "z": "top" }` chamfers hole entry edges.
+- `cad_feature_tube` — a hollow cylinder in one call: outer diameter, length, and either inner diameter or wall thickness. Use it directly for tubes, pipes and bushings instead of composing two extrusions.
 - `cad_part_export` — STEP, STL or glTF.
 
 Every mutation rebuilds the part, validates one watertight solid, and measures volume, mass and centre of mass before it is kept. Feature order is the source of truth; there is no hidden state and no generated Python.
 
-> Create a project named demo, create an 80 × 40 × 6 mm aluminium plate with profile center [40, 20] so its corner is at the origin, drill two 6 mm through holes at (20, 20) and (60, 20), fillet the vertical edges with radius 3, export STEP and commit the revision.
+> Create a project named demo, create an 80 × 40 × 6 mm aluminium plate with profile center [40, 20] so its corner is at the origin, drill two 6 mm through holes at (20, 20) and (60, 20), fillet the vertical edges with radius 3, chamfer the hole entries by 0.5 mm, then add a tube with outer diameter 100 mm, wall 2 mm and length 80 mm. Export both STEP files and commit.
+
+The generalisation rule: the model composes **primitives and ordered features**, it does not run per-part code. A tube is one `cad_feature_tube`; a bracket is an extrude plus holes and fillets. New part families are added by adding primitives or feature types, never by hardcoding a recipe for one client.
 
 Assembly, BOM, simulation and topology optimization are **not implemented yet**; the intended contract is in [docs/tool-suite.md](docs/tool-suite.md).
 
@@ -88,9 +92,9 @@ Assembly, BOM, simulation and topology optimization are **not implemented yet**;
 .venv/bin/python scripts/cad-demo.py
 ```
 
-The script creates a temporary project, builds an 80 × 40 × 6 mm plate with two holes and fillets, prints its measurements and exports STEP/STL. To test the same path through the plugin, run `pnpm build`, regenerate the Harness patch with `node scripts/harness-config.mjs`, restart the Harness web server with that patch, then ask the prompt above. The compiled plugin exposes the `cad_*` tools alongside the older `openengineer_*` ones.
+The script creates a temporary project, builds an 80 × 40 × 6 mm plate with holes, fillets and chamfers, plus a 100 mm tube, prints its measurements and exports STEP/STL. To test the same path through the plugin, run `pnpm build`, regenerate the Harness patch with `node scripts/harness-config.mjs`, restart the Harness web server with that patch, then ask the prompt above. The compiled plugin exposes the `cad_*` tools alongside the older `openengineer_*` ones.
 
-Tests: `.venv/bin/python -m pytest -q` (22 tests) and `pnpm test` (10 tests, including a real Cordis registry run). `uv run pytest` may fail if the sandbox cannot write `~/.cache/uv`; the project virtualenv is the fallback.
+Tests: `.venv/bin/python -m pytest -q` (23 tests) and `pnpm test` (11 tests, including a real Cordis registry run). `uv run pytest` may fail if the sandbox cannot write `~/.cache/uv`; the project virtualenv is the fallback.
 
 The bundled dimensions are **synthetic test data**, not measurements taken from a physical part. Their provenance labels exercise the schema; replace them with your own observations before reverse engineering a real component.
 

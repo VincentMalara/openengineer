@@ -1,5 +1,6 @@
 import fcntl
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -37,8 +38,15 @@ def test_cad_project_part_features_export_and_revision(tmp_path):
     assert filleted["feature"]["id"] == "feature-004"
     assert filleted["volume_mm3"] < extruded["volume_mm3"]
 
+    chamfered = call(tmp_path, "feature_chamfer", part=part["part"], distance=0.5,
+                     selector={"kind": "holes", "z": "top"})
+    assert chamfered["feature"]["id"] == "feature-005"
+    assert chamfered["feature"]["type"] == "chamfer"
+    assert chamfered["volume_mm3"] < filleted["volume_mm3"]
+    assert filleted["volume_mm3"] - chamfered["volume_mm3"] == pytest.approx(5.0, abs=1.0)
+
     summary = call(tmp_path, "part_get", part=part["part"])
-    assert len(summary["features"]) == 4
+    assert len(summary["features"]) == 5
     assert summary["material_properties"]["id"] == "alu-6061"
 
     exported = call(tmp_path, "part_export", part=part["part"], format="step")
@@ -79,6 +87,32 @@ def test_cad_circle_polygon_and_plane_extrudes(tmp_path):
     upright = call(tmp_path, "part_get", part=third["part"])
     assert upright["bounds_mm"]["max"][1] == pytest.approx(0)
     assert upright["bounds_mm"]["min"][1] == pytest.approx(-4)
+
+
+def test_cad_tube_primitive(tmp_path):
+    call(tmp_path, "project_create", name="demo")
+    part = call(tmp_path, "part_create", name="tube", material="alu-6061")
+    tube = call(tmp_path, "feature_tube", part=part["part"],
+                outer_diameter=100, wall_thickness=2, length=80)
+    expected = math.pi * (50 ** 2 - 48 ** 2) * 80
+    assert tube["volume_mm3"] == pytest.approx(expected, rel=1e-3)
+    assert tube["mass_g"] == pytest.approx(expected * 2700 / 1e6, rel=1e-3)
+    assert tube["bounds_mm"]["min"] == pytest.approx([-50, -50, 0])
+    assert tube["bounds_mm"]["max"] == pytest.approx([50, 50, 80])
+
+    along_x = call(tmp_path, "part_create", name="tube-x")
+    call(tmp_path, "feature_tube", part=along_x["part"],
+         outer_diameter=100, inner_diameter=96, length=80, axis="x")
+    tube_x = call(tmp_path, "part_get", part=along_x["part"])
+    assert tube_x["bounds_mm"]["min"] == pytest.approx([0, -50, -50])
+    assert tube_x["bounds_mm"]["max"] == pytest.approx([80, 50, 50])
+
+    with pytest.raises(ValidationError):
+        call(tmp_path, "feature_tube", part=part["part"],
+             outer_diameter=100, inner_diameter=96, wall_thickness=2, length=80)
+    with pytest.raises(ValidationError):
+        call(tmp_path, "feature_tube", part=part["part"],
+             outer_diameter=100, inner_diameter=120, length=80)
 
 
 def test_cad_rejects_invalid_operations(tmp_path):

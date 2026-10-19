@@ -122,6 +122,14 @@ def feature_fillet(root: Path, args: dict) -> dict:
     return _feature(root, args, "fillet")
 
 
+def feature_chamfer(root: Path, args: dict) -> dict:
+    return _feature(root, args, "chamfer")
+
+
+def feature_tube(root: Path, args: dict) -> dict:
+    return _feature(root, args, "tube")
+
+
 def part_export(root: Path, args: dict) -> dict:
     request = ExportRequest.model_validate(args)
     store.load_project(root)
@@ -161,6 +169,8 @@ HANDLERS = {
     "feature_extrude": feature_extrude,
     "feature_hole": feature_hole,
     "feature_fillet": feature_fillet,
+    "feature_chamfer": feature_chamfer,
+    "feature_tube": feature_tube,
     "part_export": part_export,
     "material_list": material_list,
 }

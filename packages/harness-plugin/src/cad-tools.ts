@@ -135,6 +135,22 @@ const selectorSchema = {
         max: { type: 'array', items: { type: 'number' }, required: true },
       },
     },
+    {
+      type: 'object', additionalProperties: false,
+      properties: {
+        kind: { type: 'string', const: 'circular', required: true },
+        diameter: { type: 'number', description: 'Circle diameter in mm' },
+        center: { type: 'array', items: { type: 'number' }, description: 'Circle centre [x, y] in mm' },
+        z: { type: 'string', enum: ['top', 'bottom', 'both'], description: 'Restrict to the part top, bottom or both' },
+      },
+    },
+    {
+      type: 'object', additionalProperties: false,
+      properties: {
+        kind: { type: 'string', const: 'holes', required: true },
+        z: { type: 'string', enum: ['top', 'bottom', 'both'], description: 'Restrict to the part top, bottom or both' },
+      },
+    },
   ],
 } as const;
 
@@ -477,7 +493,7 @@ export function registerCadTools(ctx: Context, config: EngineConfig): void {
 
   ctx.tools.register(defineTool({
     name: 'cad_feature_fillet',
-    description: 'Append an edge fillet. Select edges by all, by parallelism to an axis, or by a bounding box. The part is rebuilt and validated before the feature is kept.',
+    description: 'Append an edge fillet. Select edges by all, parallelism to an axis, a bounding box, circular geometry (diameter/centre/height) or all hole edges. The part is rebuilt and validated before the feature is kept.',
     parameters: {
       part: { type: 'string', required: true, description: 'Part id' },
       radius: { type: 'number', required: true, description: 'Fillet radius in mm' },
@@ -489,6 +505,45 @@ export function registerCadTools(ctx: Context, config: EngineConfig): void {
     },
     async execute(args, execution) {
       return runTool(() => runCadOperation<CadFeatureResult>(config, 'feature_fillet', args, execution.signal));
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'cad_feature_chamfer',
+    description: 'Append an edge chamfer. distance is the chamfer leg in mm; distance2 optionally makes it asymmetric. Use selector {kind:"holes", z:"top"} to chamfer hole entry edges, or all/parallel/box/circular selectors. The part is rebuilt and validated before the feature is kept.',
+    parameters: {
+      part: { type: 'string', required: true, description: 'Part id' },
+      distance: { type: 'number', required: true, description: 'Chamfer distance in mm' },
+      distance2: { type: 'number', description: 'Optional second chamfer distance in mm for an asymmetric chamfer' },
+      selector: { oneOf: selectorSchema.oneOf, required: true, description: 'Edge selector' },
+    },
+    output: {
+      schema: featureResultSchema,
+      render: (_args, value) => [{ type: 'text', text: formatFeatureResult(value as CadFeatureResult) }],
+    },
+    async execute(args, execution) {
+      return runTool(() => runCadOperation<CadFeatureResult>(config, 'feature_chamfer', args, execution.signal));
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'cad_feature_tube',
+    description: 'Add a hollow cylinder in one call: outer diameter, length, and either inner diameter or wall thickness. Axis X, Y or Z; the tube starts at the origin and extends along the positive axis. Use this directly for tubes, pipes and bushings instead of composing two extrusions.',
+    parameters: {
+      part: { type: 'string', required: true, description: 'Part id' },
+      outer_diameter: { type: 'number', required: true, description: 'Outer diameter in mm' },
+      inner_diameter: { type: 'number', description: 'Inner diameter in mm; provide this or wall_thickness' },
+      wall_thickness: { type: 'number', description: 'Wall thickness in mm; provide this or inner_diameter' },
+      length: { type: 'number', required: true, description: 'Tube length in mm' },
+      axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'Extrusion axis; default z' },
+      operation: { type: 'string', enum: ['add', 'cut', 'intersect'], description: 'Boolean operation; default add' },
+    },
+    output: {
+      schema: featureResultSchema,
+      render: (_args, value) => [{ type: 'text', text: formatFeatureResult(value as CadFeatureResult) }],
+    },
+    async execute(args, execution) {
+      return runTool(() => runCadOperation<CadFeatureResult>(config, 'feature_tube', args, execution.signal));
     },
   }));
 

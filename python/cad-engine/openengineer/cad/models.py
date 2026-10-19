@@ -66,10 +66,13 @@ class HoleFeature(StrictModel):
 
 
 class EdgeSelector(StrictModel):
-    kind: Literal["all", "parallel", "box"]
+    kind: Literal["all", "parallel", "box", "circular", "holes"]
     axis: Literal["x", "y", "z"] | None = None
     min: tuple[float, float, float] | None = None
     max: tuple[float, float, float] | None = None
+    diameter: float | None = Field(default=None, gt=0, le=1000)
+    center: tuple[float, float] | None = None
+    z: Literal["top", "bottom", "both"] | None = None
 
     @model_validator(mode="after")
     def selector_fields(self):
@@ -80,6 +83,8 @@ class EdgeSelector(StrictModel):
                 raise ValueError("min and max are required when kind is box")
             if any(lo >= hi for lo, hi in zip(self.min, self.max)):
                 raise ValueError("selector min must be smaller than max on every axis")
+        if self.kind == "circular" and self.diameter is None and self.center is None and self.z is None:
+            raise ValueError("circular selector requires at least one of diameter, center or z")
         return self
 
 
@@ -90,8 +95,46 @@ class FilletFeature(StrictModel):
     selector: EdgeSelector = Field(default_factory=lambda: EdgeSelector(kind="all"))
 
 
+class ChamferFeature(StrictModel):
+    id: str | None = None
+    type: Literal["chamfer"] = "chamfer"
+    distance: float = Field(gt=0, le=1000)
+    distance2: float | None = Field(default=None, gt=0, le=1000)
+    selector: EdgeSelector = Field(default_factory=lambda: EdgeSelector(kind="all"))
+
+
+class TubeFeature(StrictModel):
+    id: str | None = None
+    type: Literal["tube"] = "tube"
+    outer_diameter: float = Field(gt=0, le=10000)
+    inner_diameter: float | None = Field(default=None, gt=0, le=10000)
+    wall_thickness: float | None = Field(default=None, gt=0, le=10000)
+    length: float = Field(gt=0, le=10000)
+    axis: Literal["x", "y", "z"] = "z"
+    operation: Literal["add", "cut", "intersect"] = "add"
+
+    @model_validator(mode="after")
+    def tube_dimensions(self):
+        if (self.inner_diameter is None) == (self.wall_thickness is None):
+            raise ValueError("provide exactly one of inner_diameter or wall_thickness")
+        inner = self.inner_diameter
+        if inner is None:
+            inner = self.outer_diameter - 2 * self.wall_thickness
+        if inner <= 0:
+            raise ValueError("wall_thickness is too large for outer_diameter")
+        if inner >= self.outer_diameter:
+            raise ValueError("inner_diameter must be smaller than outer_diameter")
+        return self
+
+    @property
+    def resolved_inner_diameter(self) -> float:
+        if self.inner_diameter is not None:
+            return self.inner_diameter
+        return self.outer_diameter - 2 * self.wall_thickness
+
+
 Feature = Annotated[
-    Union[ExtrudeFeature, HoleFeature, FilletFeature],
+    Union[ExtrudeFeature, HoleFeature, FilletFeature, ChamferFeature, TubeFeature],
     Field(discriminator="type"),
 ]
 

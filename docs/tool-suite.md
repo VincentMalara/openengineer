@@ -4,7 +4,7 @@ Objectif : une suite d'outils typés, utilisables comme plugin Harness, qui perm
 
 ## Statut
 
-**Slice 1 implémentée** (`cad_*`) : projet, pièces, extrude, perçage, congé, reconstruction, validation, masse, matériaux, exports STEP/STL/glTF et révisions immuables. Les outils sont enregistrés par le plugin à côté des outils `openengineer_*` existants.
+**Slice 1 implémentée** (`cad_*`) : projet, pièces, extrude, perçage, congé, chanfrein, tube, reconstruction, validation, masse, matériaux, exports STEP/STL/glTF et révisions immuables. Les outils sont enregistrés par le plugin à côté des outils `openengineer_*` existants.
 
 Le stockage réel est plus simple que le schéma cible ci-dessous : le projet vit directement dans la racine configurée (`project.json`, `parts/`, `artifacts/`, `revisions/`, `.lock`) et non dans un sous-dossier `project/`.
 
@@ -47,7 +47,8 @@ Les nouveaux outils utilisent le préfixe `cad_`. Les outils `openengineer_*` ex
 | `cad_feature_extrude` | Extruder un profil | 1 |
 | `cad_feature_hole` | Perçage simple / traversant | 1 |
 | `cad_feature_fillet` | Congé sur sélection d'arêtes | 1 |
-| `cad_feature_chamfer` | Chanfrein | 2 |
+| `cad_feature_chamfer` | Chanfrein, y compris arêtes de trous | 1 |
+| `cad_feature_tube` | Tube : diamètre extérieur, longueur, épaisseur ou diamètre intérieur | 1 |
 | `cad_feature_pattern` | Motif linéaire / circulaire | 2 |
 | `cad_feature_revolve` | Révolution | 2 |
 | `cad_feature_shell` | Coque | 3 |
@@ -170,8 +171,13 @@ La BOM n'est pas stockée à la main : elle est projetée depuis les instances, 
   - `{ "kind": "all" }`
   - `{ "kind": "parallel", "axis": "x" | "y" | "z" }`
   - `{ "kind": "box", "min": [x,y,z], "max": [x,y,z] }`
-  - `{ "kind": "feature", "id": "feature-001" }` (arêtes issues de la feature)
+  - `{ "kind": "circular", "diameter": 6, "center": [20,20], "z": "top" }` (filtres optionnels)
+  - `{ "kind": "holes", "z": "top" | "bottom" | "both" }` (toutes les arêtes des perçages)
 - **Pas de références topologiques persistantes en v1.** La pièce est reconstruite intégralement à chaque modification, dans l'ordre des features. C'est plus lent mais déterministe.
+
+### Primitives de haut niveau
+
+La généralisation ne passe pas par une recette par pièce, mais par un jeu de primitives et de modificateurs ordonnés. `cad_feature_tube` en est l'exemple : un seul appel `outer_diameter=100, wall_thickness=2, length=80` construit le cylindre extérieur, le alésage intérieur et la soustraction, au lieu de demander au modèle d'enchaîner deux extrusions. Le catalogue s'étend par primitives (tube, boîte, plaque, révolution) et par modificateurs (perçage, congé, chanfrein, motif, coque), jamais par un outil dédié à un client.
 
 ## Reconstruction et validation
 
@@ -220,9 +226,9 @@ Chaque mutation :
 
 ### Slice 1 — Pièce paramétrique (fait)
 
-Outils : projet, pièce, extrude, hole, fillet, rebuild, check, export, matériaux.
+Outils : projet, pièce, extrude, hole, fillet, chamfer, tube, rebuild, check, export, matériaux.
 
-**Critère** : créer trois pièces différentes sans toucher au code, les modifier, les valider et exporter leurs STEP/STL.
+**Critère** : créer trois pièces différentes sans toucher au code, les modifier, les valider et exporter leurs STEP/STL. Vérifié avec une plaque percée/chanfreinée et un tube Ø100 × 80, épaisseur 2 mm.
 
 ### Slice 2 — Assemblage et BOM
 

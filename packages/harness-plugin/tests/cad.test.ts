@@ -80,9 +80,15 @@ describe('CAD suite: project, part, features, export and revisions', () => {
     expect(fillet.feature).toMatchObject({ id: 'feature-004', type: 'fillet' });
     expect(fillet.volume_mm3).toBeLessThan(plateVolume);
 
+    const chamfer = (await invoke(ctx, 'cad_feature_chamfer', {
+      part: part.part, distance: 0.5, selector: { kind: 'holes', z: 'top' },
+    })).value as CadFeatureResult;
+    expect(chamfer.feature).toMatchObject({ id: 'feature-005', type: 'chamfer' });
+    expect(chamfer.volume_mm3).toBeLessThan(fillet.volume_mm3);
+
     const summary = (await invoke(ctx, 'cad_part_get', { part: part.part })).value as CadPartSummary;
     expect(summary.name).toBe('plate');
-    expect(summary.features).toHaveLength(4);
+    expect(summary.features).toHaveLength(5);
     expect(summary.checks.single_solid).toBe(true);
     expect(summary.mass_g).toBeGreaterThan(0);
 
@@ -103,7 +109,25 @@ describe('CAD suite: project, part, features, export and revisions', () => {
     expect(history.revisions[0].revision).toBe(commit.revision);
 
     const parts = (await invoke(ctx, 'cad_part_list', {})).value as CadPartList;
-    expect(parts.parts).toEqual([{ part: part.part, name: 'plate', material: 'alu-6061', features: 4 }]);
+    expect(parts.parts).toEqual([{ part: part.part, name: 'plate', material: 'alu-6061', features: 5 }]);
+  }, 180000);
+
+  it('builds a tube directly from outer diameter, length and wall thickness', async () => {
+    const config = await setup();
+    const ctx = await harness(config);
+    await invoke(ctx, 'cad_project_create', { name: 'demo' });
+    const part = (await invoke(ctx, 'cad_part_create', { name: 'tube', material: 'alu-6061' })).value as CadPartBasic;
+    const tube = (await invoke(ctx, 'cad_feature_tube', {
+      part: part.part, outer_diameter: 100, wall_thickness: 2, length: 80,
+    })).value as CadFeatureResult;
+    expect(tube.feature).toMatchObject({ type: 'tube', outer_diameter: 100, wall_thickness: 2, length: 80 });
+    expect(tube.bounds_mm.min).toEqual([-50, -50, 0]);
+    expect(tube.bounds_mm.max).toEqual([50, 50, 80]);
+    const expected = Math.PI * (50 ** 2 - 48 ** 2) * 80;
+    expect(Math.abs(tube.volume_mm3 - expected) / expected).toBeLessThan(0.001);
+    expect(tube.mass_g).toBeGreaterThan(100);
+    const exported = (await invoke(ctx, 'cad_part_export', { part: part.part, format: 'step' })).value as CadExport;
+    expect(exported.bytes).toBeGreaterThan(1000);
   }, 180000);
 
   it('marks the draft dirty after a commit and rejects an empty commit', async () => {

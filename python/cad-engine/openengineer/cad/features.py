@@ -2,15 +2,15 @@
 import math
 
 from build123d import (
-    Align, Axis, CenterOf, Circle, Cylinder, Plane, Polygon, Pos, Rectangle,
-    extrude, fillet,
+    Align, Axis, CenterOf, Circle, Cylinder, GeomType, Plane, Polygon, Pos, Rectangle,
+    Rotation, chamfer, extrude, fillet,
 )
 
 from ..errors import EngineError
 from .materials import get_material
 from .models import (
-    CircleProfile, EdgeSelector, ExtrudeFeature, FilletFeature, HoleFeature,
-    Part, PolygonProfile, RectangleProfile,
+    ChamferFeature, CircleProfile, EdgeSelector, ExtrudeFeature, FilletFeature, HoleFeature,
+    Part, PolygonProfile, RectangleProfile, TubeFeature,
 )
 
 PLANES = {"XY": Plane.XY, "XZ": Plane.XZ, "YZ": Plane.YZ}
@@ -68,7 +68,12 @@ def _apply_hole(current, feature: HoleFeature):
     return result
 
 
-def _select_edges(current, selector: EdgeSelector):
+def _edge_center(edge):
+    # `Edge.center()` is the curve's centroid; circular selectors need the arc centre.
+    return edge.arc_center if edge.geom_type == GeomType.CIRCLE else edge.center()
+
+
+def _select_edges(current, selector: EdgeSelector, holes=()):
     edges = list(current.edges())
     if selector.kind == "all":
         return edges
@@ -77,17 +82,49 @@ def _select_edges(current, selector: EdgeSelector):
     if selector.kind == "box":
         selected = []
         for edge in edges:
-            center = edge.center()
+            center = _edge_center(edge)
             if all(lo <= value <= hi for value, lo, hi in zip((center.X, center.Y, center.Z), selector.min, selector.max)):
                 selected.append(edge)
+        return selected
+    if selector.kind in ("circular", "holes"):
+        bounds = current.bounding_box()
+        selected = []
+        for edge in edges:
+            if edge.geom_type != GeomType.CIRCLE:
+                continue
+            center = edge.arc_center
+            if selector.kind == "holes":
+                if not any(
+                        math.isclose(center.X, hole.x, abs_tol=1e-6)
+                        and math.isclose(center.Y, hole.y, abs_tol=1e-6)
+                        and math.isclose(edge.radius * 2, hole.diameter, abs_tol=1e-6)
+                        for hole in holes):
+                    continue
+            else:
+                if selector.diameter is not None and not math.isclose(
+                        edge.radius * 2, selector.diameter, abs_tol=1e-6):
+                    continue
+                if selector.center is not None and not (
+                        math.isclose(center.X, selector.center[0], abs_tol=1e-6)
+                        and math.isclose(center.Y, selector.center[1], abs_tol=1e-6)):
+                    continue
+            at_top = math.isclose(center.Z, bounds.max.Z, abs_tol=1e-6)
+            at_bottom = math.isclose(center.Z, bounds.min.Z, abs_tol=1e-6)
+            if selector.z == "top" and not at_top:
+                continue
+            if selector.z == "bottom" and not at_bottom:
+                continue
+            if selector.z == "both" and not (at_top or at_bottom):
+                continue
+            selected.append(edge)
         return selected
     raise EngineError("VALIDATION", f"Unsupported selector: {selector.kind}")
 
 
-def _apply_fillet(current, feature: FilletFeature):
+def _apply_fillet(current, feature: FilletFeature, holes=()):
     if current is None:
         raise EngineError("VALIDATION", "A fillet cannot be the first feature")
-    edges = _select_edges(current, feature.selector)
+    edges = _select_edges(current, feature.selector, holes)
     if not edges:
         raise EngineError("VALIDATION", "The edge selector matched no edges")
     try:
@@ -96,20 +133,54 @@ def _apply_fillet(current, feature: FilletFeature):
         raise EngineError("GEOMETRY", f"Fillet failed: {exc}") from None
 
 
+def _apply_chamfer(current, feature: ChamferFeature, holes=()):
+    if current is None:
+        raise EngineError("VALIDATION", "A chamfer cannot be the first feature")
+    edges = _select_edges(current, feature.selector, holes)
+    if not edges:
+        raise EngineError("VALIDATION", "The edge selector matched no edges")
+    try:
+        if feature.distance2 is not None:
+            return chamfer(edges, feature.distance, feature.distance2)
+        return chamfer(edges, feature.distance)
+    except Exception as exc:
+        raise EngineError("GEOMETRY", f"Chamfer failed: {exc}") from None
+
+
+def _apply_tube(current, feature: TubeFeature):
+    outer_radius = feature.outer_diameter / 2
+    inner_radius = feature.resolved_inner_diameter / 2
+    outer = Cylinder(outer_radius, feature.length, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    bore = Pos(0, 0, -1) * Cylinder(
+        inner_radius, feature.length + 2, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    tube = outer - bore
+    if feature.axis == "x":
+        tube = Rotation(0, 90, 0) * tube
+    elif feature.axis == "y":
+        tube = Rotation(-90, 0, 0) * tube
+    return _combine(current, tube, feature.operation)
+
+
 def build_part(spec: Part):
     """Rebuild the part from its ordered feature list."""
     current = None
+    holes = []
     for feature in spec.features:
         if isinstance(feature, ExtrudeFeature):
             current = _apply_extrude(current, feature)
         elif isinstance(feature, HoleFeature):
             current = _apply_hole(current, feature)
+            holes.append(feature)
         elif isinstance(feature, FilletFeature):
-            current = _apply_fillet(current, feature)
+            current = _apply_fillet(current, feature, holes)
+        elif isinstance(feature, ChamferFeature):
+            current = _apply_chamfer(current, feature, holes)
+        elif isinstance(feature, TubeFeature):
+            current = _apply_tube(current, feature)
         else:
             raise EngineError("VALIDATION", f"Unsupported feature: {feature}")
     if current is None:
-        raise EngineError("VALIDATION", "Part has no features; add an extrude first")
+        raise EngineError("VALIDATION", "Part has no features; add an extrude or tube first")
     return current
 
 

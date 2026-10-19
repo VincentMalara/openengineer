@@ -1,6 +1,6 @@
 # Feuille de route — ce qu'il reste à faire
 
-État vérifié le 19/10/2026 : 22 tests pytest et 10 tests Vitest passent, le dépôt est publié, la CI Ubuntu est verte et la licence MIT est en place. La suite `cad_*` slice 1 (pièce paramétrique) est implémentée.
+État vérifié le 19/10/2026 : 23 tests pytest et 11 tests Vitest passent, le dépôt est publié, la CI Ubuntu est verte et la licence MIT est en place. La suite `cad_*` slice 1 (pièce paramétrique) est implémentée.
 
 ## Déjà en place (à préserver)
 
@@ -65,11 +65,11 @@ Effort indicatif : S < 1 jour, M = 1 à 3 jours, L = 1 à 2 semaines.
 
 - [x] Projet : `cad_project_create/status/commit/history`, brouillon et révisions immuables.
 - [x] Pièces : `cad_part_create/list/get/rebuild/set_material`, `cad_material_list`.
-- [x] Features ordonnées : `cad_feature_extrude` (rectangle, cercle, polygone ; XY/XZ/YZ), `cad_feature_hole` (traversant/aveugle), `cad_feature_fillet` (toutes, parallèles à un axe, boîte).
+- [x] Features ordonnées : `cad_feature_extrude` (rectangle, cercle, polygone ; XY/XZ/YZ), `cad_feature_hole` (traversant/aveugle), `cad_feature_fillet` (toutes, parallèles à un axe, boîte, circulaires, trous), `cad_feature_chamfer`, `cad_feature_tube`.
 - [x] Reconstruction déterministe et validation avant écriture : solide unique, valide, volume, masse, centre de masse.
 - [x] Exports : `cad_part_export` STEP/STL/glTF, adressés par hash de spec.
 - [x] Erreurs typées `CONFLICT` / `NOT_FOUND` / `VALIDATION` / `GEOMETRY`.
-- [x] Tests : 22 pytest, 10 Vitest.
+- [x] Tests : 23 pytest, 11 Vitest.
 
 **Critère** : créer trois pièces différentes sans toucher au code, les modifier, les valider et exporter leurs STEP/STL.
 
