@@ -47,6 +47,8 @@ Then:
 
 > Use the parameters.yaml from the returned revision, change height to 45 mm, and record the reason Increase clearance. Report the new measured dimensions and history.
 
+A successful call returns a structured result: revision, parent, measured bounds and volume, per-check booleans, hole boundary circles and artifact paths. The model sees a readable summary rather than raw JSON. Failures carry a stable code — `VALIDATION`, `PATH`, `TIMEOUT`, `ABORTED`, `LOCK`, `EXPORT`, `GEOMETRY`, `IO` or `ENGINE` — alongside a human-readable message.
+
 The plugin uses the provider configured in Harness; OpenEngineer does not implement provider adapters or require its own API key. The automated integration test invokes the real Harness registry without an LLM or Web UI. Live provider selection and natural-language behavior are **not yet acceptance-tested**.
 
 The bundled dimensions are **synthetic test data**, not measurements taken from a physical part. Their provenance labels exercise the schema; replace them with your own observations before reverse engineering a real component.

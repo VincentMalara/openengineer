@@ -42,15 +42,15 @@ Effort indicatif : S < 1 jour, M = 1 à 3 jours, L = 1 à 2 semaines.
 
 ## P1 — Fermer le contrat du plugin
 
-- [ ] Remplacer le retour `string` (JSON brut) par un objet structuré avec un `render` lisible : révision, dimensions mesurées, checks, chemins, prochaine étape.
-- [ ] Introduire des erreurs typées exploitables par l'agent : `VALIDATION`, `PATH`, `TIMEOUT`, `LOCK`, `ENGINE`, `IO`. Aujourd'hui tout arrive en texte dans `CAD operation failed: ...`.
-- [ ] Compléter les tests de robustesse :
-  - [ ] timeout et annulation (`AbortSignal`) : le processus Python est bien terminé ;
-  - [ ] entrée > 1 Mo et `reason` vide ;
-  - [ ] champ JSON inconnu dans le protocole `--json` ;
-  - [ ] mode CLI classique (`--input/--output/--reason/--set`) ;
-  - [ ] verrou relâché après échec ou crash ;
-  - [ ] aucune révision publiée si l'import STEP échoue.
+- [x] Remplacer le retour `string` (JSON brut) par un objet structuré avec un `render` lisible : révision, dimensions mesurées, checks, chemins.
+- [x] Introduire des erreurs typées exploitables par l'agent : `VALIDATION`, `PATH`, `TIMEOUT`, `ABORTED`, `LOCK`, `EXPORT`, `GEOMETRY`, `IO`, `ENGINE`, re-levées en `HarnessError`.
+- [x] Compléter les tests de robustesse :
+  - [x] timeout et annulation (`AbortSignal`) : le processus Python est bien terminé ;
+  - [x] entrée > 1 Mo et `reason` vide ;
+  - [x] champ JSON inconnu dans le protocole `--json` ;
+  - [x] mode CLI classique (`--input/--output/--reason/--set`) ;
+  - [x] verrou relâché après échec ;
+  - [x] aucune révision publiée si l'import STEP échoue.
 - [ ] Rendre le dossier de sortie configurable (`artifactsDir`) au lieu du `artifacts` codé en dur, avec confinement à la racine.
 - [ ] Permettre l'édition des trous : soit un override `holes`, soit un outil dédié. Aujourd'hui seuls les 4 paramètres scalaires sont modifiables, les trous exigent une édition manuelle du YAML.
 - [ ] Ajouter des outils de lecture sans rebuild : `openengineer_list_revisions` et `openengineer_inspect_revision` (record, rapport, paramètres).
@@ -111,12 +111,11 @@ Effort indicatif : S < 1 jour, M = 1 à 3 jours, L = 1 à 2 semaines.
 3. **Photos et code généré** : fonctionnalités du produit, ou restent hors périmètre après la V1 ?
 4. **Distribution** : plugin npm versionné, ou installation depuis un checkout.
 
-## Ordre recommandé pour les 4 prochaines actions
+## Ordre recommandé pour les 3 prochaines actions
 
-1. P1 : sortie structurée et erreurs typées.
-2. Tests timeout/annulation et échec STEP.
-3. Acceptance réelle dans la Web UI.
-4. Deuxième recette **ou** aperçu visuel (selon la démo visée).
+1. Acceptance réelle dans la Web UI.
+2. Rendre le dossier de sortie configurable, puis l'édition des trous et les outils de lecture.
+3. Deuxième recette **ou** aperçu visuel (selon la démo visée).
 
 ## Risques principaux
 

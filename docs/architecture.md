@@ -16,13 +16,14 @@ The latest build123d documentation targets a development version. The implementa
 
 Harness provider → Cordis plugin tool → TypeScript process bridge → Python/Pydantic → build123d/OpenCascade → STEP roundtrip validation → immutable revision.
 
-- `packages/harness-plugin`: registration, configuration, tool description and Harness-specific types.
-- `packages/engineering-core`: JSON subprocess transport, timeout, cancellation and project path restrictions. No Harness imports.
+- `packages/harness-plugin`: registration, configuration, structured result schema, readable rendering and Harness-specific error mapping.
+- `packages/engineering-core`: JSON subprocess transport, structured result normalization, typed errors, timeout, cancellation and project path restrictions. No Harness imports.
 - `python/cad-engine/openengineer/models.py`: dimensions, provenance and input constraints.
 - `geometry.py`: deterministic construction and geometric measurement. This module is the initial backend replacement boundary.
 - `pipeline.py`: staged publication, immutable history, report and artifact management.
-- `cli.py`: standalone CLI and JSON protocol.
-- `tests` and `packages/harness-plugin/tests`: geometry, failure and real-registry integration tests.
+- `errors.py`: typed engine failures shared by the pipeline and the CLI protocol.
+- `cli.py`: standalone CLI and JSON protocol, including machine-readable error codes.
+- `tests` and `packages/harness-plugin/tests`: geometry, failure, timeout/cancellation and real-registry integration tests.
 - `examples/mounting-bracket`: reproducible measured input.
 
 No network service or new agent framework. A future CAD backend should preserve the structured specification and validation result contract; a generic backend interface is deferred until a second implementation makes its actual requirements clear. NumPy/SciPy are available through CAD dependencies but no speculative analysis subsystem is introduced.
@@ -44,6 +45,7 @@ No network service or new agent framework. A future CAD backend should preserve 
 - Baselines come from the previous committed revision; snapshots preserve source/provenance, requirements, assumptions and the modification reason.
 - Read source bytes once so the recorded source hash matches the parsed input.
 - Staged directory rename prevents partial revisions; advisory locking avoids a permanently stale exclusive-create lock after timeout/process death.
+- Tool results are structured and rendered as a readable summary; failures carry stable codes across the Python/TypeScript boundary, re-raised as `HarnessError` so `info.code` survives policy and replay.
 - No shell command interpolation, no generated Python, bounded subprocess output and duration, and canonical input/output path containment at the TypeScript boundary.
 - Source imports and Python exceptions are returned as structured CLI errors when possible.
 
@@ -53,4 +55,4 @@ No approval was needed for this local reversible implementation. The project is 
 
 ## Local verification result
 
-On macOS arm64 / Python 3.12 / Node 25.6.1: TypeScript compilation succeeded; 12 pytest tests and 3 Vitest tests passed. Four build123d deprecation warnings remain upstream. Two demonstration STEP files were exported and reimported: 80 × 40 × 30 mm and 80 × 40 × 45 mm, each with two 6 mm through holes. Example values are synthetic fixtures, not observations of a real physical component. The GitHub Actions workflow passes on GitHub-hosted Ubuntu (Python 3.12, Node 22.19, 33 s). The full Web UI and an external LLM provider have not been exercised.
+On macOS arm64 / Python 3.12 / Node 25.6.1: TypeScript compilation succeeded; 17 pytest tests and 5 Vitest tests passed. Four build123d deprecation warnings remain upstream. Two demonstration STEP files were exported and reimported: 80 × 40 × 30 mm and 80 × 40 × 45 mm, each with two 6 mm through holes. Example values are synthetic fixtures, not observations of a real physical component. The GitHub Actions workflow passes on GitHub-hosted Ubuntu (Python 3.12, Node 22.19). The full Web UI and an external LLM provider have not been exercised.
