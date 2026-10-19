@@ -1,0 +1,11 @@
+.venv/
+.cache/
+.pnpm-store/
+__pycache__/
+.pytest_cache/
+node_modules/
+dist/
+artifacts/
+*.egg-info/
+harness.local.yaml
+.DS_Store

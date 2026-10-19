@@ -1,0 +1,18 @@
+name: mounting-bracket
+units: mm
+length: {value: 80, source: measured, note: Caliper measurement}
+width: {value: 40, source: measured, note: Caliper measurement}
+height: {value: 30, source: measured, note: Overall height}
+thickness: {value: 4, source: assumed, note: Uniform thickness for initial model}
+holes:
+  - x: {value: 20, source: measured, note: From left edge}
+    y: {value: 20, source: measured, note: From front edge}
+    diameter: {value: 6, source: measured, note: Through hole}
+  - x: {value: 60, source: measured, note: From left edge}
+    y: {value: 20, source: measured, note: From front edge}
+    diameter: {value: 6, source: measured, note: Through hole}
+requirements:
+  - Two through holes in the horizontal foot
+assumptions:
+  - Sharp interior corner; bend radius and manufacturing process not yet measured
+  - Upright at y=0, no holes in the upright in this first model
