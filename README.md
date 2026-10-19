@@ -1,5 +1,7 @@
 # OpenEngineer
 
+[![CI](https://github.com/VincentMalara/openengineer/actions/workflows/test.yml/badge.svg)](https://github.com/VincentMalara/openengineer/actions/workflows/test.yml)
+
 A first working engineering tool for DeepSeek Harness: build, modify and verify a parametric L mounting bracket from measured YAML. No custom GUI, photograph interpretation or arbitrary generated Python execution.
 
 ## Quick start

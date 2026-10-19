@@ -29,14 +29,14 @@ Effort indicatif : S < 1 jour, M = 1 à 3 jours, L = 1 à 2 semaines.
 
 ---
 
-## P0 — Rendre le dépôt partageable (bloquant)
+## P0 — Rendre le dépôt partageable (fait)
 
 - [x] Faire le premier commit (commit initial).
 - [x] Ajouter `.DS_Store` au `.gitignore` et supprimer le fichier présent.
 - [x] Vérifier qu'aucun `.venv`, `node_modules`, `dist`, `artifacts`, `harness.local.yaml` ni secret n'entre dans le commit.
 - [x] Choisir la licence : MIT, avec `LICENSE` et les champs de licence dans `pyproject.toml` / `package.json`.
-- [ ] Pousser le dépôt et faire tourner `.github/workflows/test.yml` sur Ubuntu ; corriger les éventuels problèmes de wheels OpenCascade/build123d.
-- [ ] Ajouter un badge CI et remplacer dans le README la mention « n'a pas tourné sur la CI hébergée ».
+- [x] Pousser le dépôt et faire tourner `.github/workflows/test.yml` sur Ubuntu ; la CI est verte en 33 s.
+- [x] Ajouter un badge CI dans le README.
 
 **Critère d'acceptation** : un clone neuf passe `uv sync --locked`, `pnpm install --frozen-lockfile`, `pnpm build`, 12 tests pytest et 3 tests Vitest, sur macOS et Ubuntu.
 
@@ -111,17 +111,16 @@ Effort indicatif : S < 1 jour, M = 1 à 3 jours, L = 1 à 2 semaines.
 3. **Photos et code généré** : fonctionnalités du produit, ou restent hors périmètre après la V1 ?
 4. **Distribution** : plugin npm versionné, ou installation depuis un checkout.
 
-## Ordre recommandé pour les 5 prochaines actions
+## Ordre recommandé pour les 4 prochaines actions
 
-1. CI verte : ajouter le remote et vérifier le run Ubuntu.
-2. Sortie structurée et erreurs typées.
-3. Tests timeout/annulation et échec STEP.
-4. Acceptance réelle dans la Web UI.
-5. Deuxième recette **ou** aperçu visuel (selon la démo visée).
+1. P1 : sortie structurée et erreurs typées.
+2. Tests timeout/annulation et échec STEP.
+3. Acceptance réelle dans la Web UI.
+4. Deuxième recette **ou** aperçu visuel (selon la démo visée).
 
 ## Risques principaux
 
-- Wheels OpenCascade sur CI/Windows : à valider tôt.
+- Wheels OpenCascade sur Windows : à valider lors de P3 (Ubuntu est validé par la CI).
 - `execFile` + `timeout` envoie SIGTERM : un build123d bloqué peut survivre, d'où le test et le kill du groupe de processus.
 - La promesse « Cursor for CAD » attire vers photos et génération de code, qui sont les deux plus gros chantiers et les plus risqués : ne pas les annoncer avant P5.
 - Un historique local n'est pas infalsifiable : le documenter plutôt que le surpromettre.
