@@ -82,6 +82,16 @@ Every mutation rebuilds the part, validates one watertight solid, and measures v
 
 Assembly, BOM, simulation and topology optimization are **not implemented yet**; the intended contract is in [docs/tool-suite.md](docs/tool-suite.md).
 
+### Try it
+
+```sh
+.venv/bin/python scripts/cad-demo.py
+```
+
+The script creates a temporary project, builds an 80 × 40 × 6 mm plate with two holes and fillets, prints its measurements and exports STEP/STL. To test the same path through the plugin, run `pnpm build`, regenerate the Harness patch with `node scripts/harness-config.mjs`, restart the Harness web server with that patch, then ask the prompt above. The compiled plugin exposes the `cad_*` tools alongside the older `openengineer_*` ones.
+
+Tests: `.venv/bin/python -m pytest -q` (22 tests) and `pnpm test` (10 tests, including a real Cordis registry run). `uv run pytest` may fail if the sandbox cannot write `~/.cache/uv`; the project virtualenv is the fallback.
+
 The bundled dimensions are **synthetic test data**, not measurements taken from a physical part. Their provenance labels exercise the schema; replace them with your own observations before reverse engineering a real component.
 
 ## Geometry contract
