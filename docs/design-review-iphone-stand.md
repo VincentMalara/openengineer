@@ -8,7 +8,7 @@ Analyse du parcours réel dans Harness : conception du support, ajout des fixati
 - 2 nervures triangulaires de 6 mm et 4 trous Ø6,2.
 - 18 features, dont 9 congés (R1 à R4) et un congé final `all` R1.
 - Volume 115 192,9 mm³, masse 142,84 g en PLA.
-- 248 arêtes, 112 faces, STEP validé, révisions 4 à 6.
+- 346 arêtes, 160 faces, STEP validé, révisions 4 à 6.
 
 Mesures vérifiées localement :
 
