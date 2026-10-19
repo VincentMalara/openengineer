@@ -9,8 +9,8 @@ import { join, resolve } from 'node:path';
 import * as plugin from '../src/index.js';
 import type { EngineConfig } from '../../engineering-core/src/index.js';
 import type {
-  CadCommit, CadExport, CadFeatureResult, CadHistory, CadPartBasic, CadPartList,
-  CadPartSummary, CadProject, CadProjectStatus,
+  CadBatchResult, CadCommit, CadDeleteResult, CadEdgeReport, CadExport, CadFeatureResult,
+  CadHistory, CadPartBasic, CadPartList, CadPartSummary, CadProject, CadProjectStatus, CadRender,
 } from '../../engineering-core/src/cad.js';
 
 const roots: string[] = [];
@@ -143,6 +143,56 @@ describe('CAD suite: project, part, features, export and revisions', () => {
     expect(await failure(ctx, 'cad_project_commit', { message: 'no change' })).toBe('CONFLICT');
     await invoke(ctx, 'cad_feature_hole', { part: part.part, x: 0, y: 0, diameter: 4 });
     expect((await invoke(ctx, 'cad_project_status', {})).value).toMatchObject({ dirty: true });
+  }, 180000);
+
+  it('inspects edges, batch-applies, groups, updates, deletes and renders', async () => {
+    const config = await setup();
+    const ctx = await harness(config);
+    await invoke(ctx, 'cad_project_create', { name: 'demo' });
+    const part = (await invoke(ctx, 'cad_part_create', { name: 'block', material: 'alu-6061' })).value as CadPartBasic;
+    await invoke(ctx, 'cad_feature_extrude', {
+      part: part.part,
+      profile: { shape: 'rectangle', width: 40, height: 40, center: [20, 20] },
+      distance: 5,
+    });
+
+    const edges = (await invoke(ctx, 'cad_part_edges', { part: part.part, kind: 'line', axis: 'z' })).value as CadEdgeReport;
+    expect(edges.returned).toBeGreaterThanOrEqual(4);
+
+    const dry = (await invoke(ctx, 'cad_features_apply', {
+      part: part.part, features: [{ type: 'hole', x: 10, y: 10, diameter: 4 }], dry_run: true,
+    })).value as CadBatchResult;
+    expect(dry.dry_run).toBe(true);
+    expect(dry.applied).toBe(1);
+    expect(((await invoke(ctx, 'cad_part_get', { part: part.part })).value as CadPartSummary).features).toHaveLength(1);
+
+    await invoke(ctx, 'cad_features_apply', {
+      part: part.part, features: [{ type: 'hole', x: 10, y: 10, diameter: 4 }],
+    });
+    const group = (await invoke(ctx, 'cad_feature_fillet_group', {
+      part: part.part,
+      operations: [
+        { radius: 1, selector: { kind: 'parallel', axis: 'z' } },
+        { radius: 0.5, selector: { kind: 'holes', z: 'top' } },
+      ],
+    })).value as CadFeatureResult;
+    expect(group.feature).toMatchObject({ type: 'fillet_group' });
+    const featureId = (group.feature as { id: string }).id;
+
+    const updated = (await invoke(ctx, 'cad_feature_update', {
+      part: part.part, feature_id: featureId,
+      parameters: { operations: [{ radius: 0.75, selector: { kind: 'holes', z: 'top' } }] },
+    })).value as CadFeatureResult;
+    expect((updated.feature as { operations: Array<{ radius: number }> }).operations[0].radius).toBe(0.75);
+
+    const deleted = (await invoke(ctx, 'cad_feature_delete', {
+      part: part.part, feature_id: featureId,
+    })).value as CadDeleteResult;
+    expect(deleted.features).toBe(2);
+
+    const rendered = (await invoke(ctx, 'cad_render', { part: part.part, view: 'iso', size: 500 })).value as CadRender;
+    expect(rendered.bytes).toBeGreaterThan(1000);
+    expect((await stat(rendered.path)).size).toBe(rendered.bytes);
   }, 180000);
 
   it('returns typed failures for missing projects, duplicates and invalid features', async () => {

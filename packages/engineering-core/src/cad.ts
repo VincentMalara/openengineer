@@ -30,6 +30,7 @@ export interface CadPartSummary {
   features: Json[];
   checks: CadChecks;
   bounds_mm: CadBounds;
+  bounds_tight_mm: CadBounds | null;
   volume_mm3: number;
   mass_g: number;
   center_of_mass_mm: number[];
@@ -41,6 +42,7 @@ export interface CadFeatureResult {
   feature: Json;
   checks: CadChecks;
   bounds_mm: CadBounds;
+  bounds_tight_mm: CadBounds | null;
   volume_mm3: number;
   mass_g: number;
   center_of_mass_mm: number[];
@@ -117,6 +119,60 @@ export interface CadMaterial {
 }
 
 export interface CadMaterialList { materials: CadMaterial[] }
+
+export interface CadEdge {
+  id: string;
+  kind: string;
+  length_mm: number;
+  center_mm: number[];
+  closed: boolean;
+  radius_mm?: number;
+  diameter_mm?: number;
+  axis?: string;
+}
+
+export interface CadEdgeReport {
+  part: string;
+  total: number;
+  returned: number;
+  edges: CadEdge[];
+}
+
+export interface CadBatchResult {
+  part: string;
+  applied: number;
+  dry_run: boolean;
+  feature_ids: string[];
+  checks: CadChecks;
+  bounds_mm: CadBounds;
+  bounds_tight_mm: CadBounds | null;
+  volume_mm3: number;
+  mass_g: number;
+  center_of_mass_mm: number[];
+  material_properties: CadMaterialProperties;
+}
+
+export interface CadDeleteResult {
+  part: string;
+  deleted: string;
+  features: number;
+  checks: CadChecks;
+  bounds_mm: CadBounds;
+  bounds_tight_mm: CadBounds | null;
+  volume_mm3: number;
+  mass_g: number;
+  center_of_mass_mm: number[];
+  material_properties: CadMaterialProperties;
+}
+
+export interface CadRender {
+  part: string;
+  view: string;
+  path: string;
+  relative_path: string;
+  bytes: number;
+  checks: CadChecks;
+}
 
 interface CadResponse {
   ok: boolean;

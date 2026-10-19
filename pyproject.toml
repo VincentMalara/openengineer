@@ -8,7 +8,7 @@ version = "0.1.0"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11,<3.14"
-dependencies = ["build123d==0.10.0", "pydantic==2.12.3", "PyYAML==6.0.3", "ocp-gordon==0.1.17"]
+dependencies = ["build123d==0.10.0", "matplotlib==3.11.2", "pydantic==2.12.3", "PyYAML==6.0.3", "ocp-gordon==0.1.17"]
 
 [project.scripts]
 openengineer = "openengineer.cli:main"

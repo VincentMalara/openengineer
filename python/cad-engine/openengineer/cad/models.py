@@ -46,6 +46,7 @@ class ExtrudeFeature(StrictModel):
     plane: Literal["XY", "XZ", "YZ"] = "XY"
     offset: float = Field(default=0.0, ge=-10000, le=10000)
     distance: float = Field(gt=0, le=10000)
+    direction: Literal["normal", "reverse", "both"] = "normal"
     operation: Literal["add", "cut", "intersect"] = "add"
 
 
@@ -57,11 +58,15 @@ class HoleFeature(StrictModel):
     diameter: float = Field(gt=0, le=1000)
     through: bool = True
     depth: float | None = Field(default=None, gt=0, le=10000)
+    axis: Literal["x", "y", "z"] = "z"
+    at: tuple[float, float, float] | None = None
 
     @model_validator(mode="after")
     def depth_required_for_blind_hole(self):
         if not self.through and self.depth is None:
             raise ValueError("depth is required when through is false")
+        if self.axis != "z" and self.at is None:
+            raise ValueError("at is required when axis is x or y")
         return self
 
 
@@ -95,12 +100,35 @@ class FilletFeature(StrictModel):
     selector: EdgeSelector = Field(default_factory=lambda: EdgeSelector(kind="all"))
 
 
+class FilletOperation(StrictModel):
+    radius: float = Field(gt=0, le=1000)
+    selector: EdgeSelector
+
+
+class FilletGroupFeature(StrictModel):
+    id: str | None = None
+    type: Literal["fillet_group"] = "fillet_group"
+    operations: list[FilletOperation] = Field(min_length=1, max_length=50)
+
+
 class ChamferFeature(StrictModel):
     id: str | None = None
     type: Literal["chamfer"] = "chamfer"
     distance: float = Field(gt=0, le=1000)
     distance2: float | None = Field(default=None, gt=0, le=1000)
     selector: EdgeSelector = Field(default_factory=lambda: EdgeSelector(kind="all"))
+
+
+class ChamferOperation(StrictModel):
+    distance: float = Field(gt=0, le=1000)
+    distance2: float | None = Field(default=None, gt=0, le=1000)
+    selector: EdgeSelector
+
+
+class ChamferGroupFeature(StrictModel):
+    id: str | None = None
+    type: Literal["chamfer_group"] = "chamfer_group"
+    operations: list[ChamferOperation] = Field(min_length=1, max_length=50)
 
 
 class TubeFeature(StrictModel):
@@ -134,7 +162,10 @@ class TubeFeature(StrictModel):
 
 
 Feature = Annotated[
-    Union[ExtrudeFeature, HoleFeature, FilletFeature, ChamferFeature, TubeFeature],
+    Union[
+        ExtrudeFeature, HoleFeature, FilletFeature, FilletGroupFeature,
+        ChamferFeature, ChamferGroupFeature, TubeFeature,
+    ],
     Field(discriminator="type"),
 ]
 
@@ -174,3 +205,57 @@ class MaterialRequest(StrictModel):
 class ExportRequest(StrictModel):
     part: str
     format: Literal["step", "stl", "gltf"]
+
+
+class EdgeBox(StrictModel):
+    min: tuple[float, float, float]
+    max: tuple[float, float, float]
+
+    @model_validator(mode="after")
+    def min_max(self):
+        if any(lo >= hi for lo, hi in zip(self.min, self.max)):
+            raise ValueError("box min must be smaller than max on every axis")
+        return self
+
+
+class EdgeQuery(StrictModel):
+    part: str
+    kind: Literal["all", "line", "circle", "bspline", "other"] = "all"
+    axis: Literal["x", "y", "z"] | None = None
+    min_length: float | None = Field(default=None, ge=0)
+    box: EdgeBox | None = None
+    limit: int = Field(default=200, ge=1, le=1000)
+
+
+class FeaturesApply(StrictModel):
+    part: str
+    features: list[dict] = Field(min_length=1, max_length=50)
+    dry_run: bool = False
+
+
+class FeatureRef(StrictModel):
+    part: str
+    feature_id: str = Field(pattern=r"^feature-\d{3,6}$")
+
+
+class PartImport(StrictModel):
+    part: str
+    spec: dict
+
+
+class FeatureUpdate(StrictModel):
+    part: str
+    feature_id: str = Field(pattern=r"^feature-\d{3,6}$")
+    parameters: dict
+
+    @model_validator(mode="after")
+    def protected_parameters(self):
+        if "id" in self.parameters or "type" in self.parameters:
+            raise ValueError("id and type cannot be changed by feature_update")
+        return self
+
+
+class RenderRequest(StrictModel):
+    part: str
+    view: Literal["iso", "front", "top", "right"] = "iso"
+    size: int = Field(default=1200, ge=400, le=2400)

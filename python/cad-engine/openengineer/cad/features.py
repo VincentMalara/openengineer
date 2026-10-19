@@ -9,8 +9,9 @@ from build123d import (
 from ..errors import EngineError
 from .materials import get_material
 from .models import (
-    ChamferFeature, CircleProfile, EdgeSelector, ExtrudeFeature, FilletFeature, HoleFeature,
-    Part, PolygonProfile, RectangleProfile, TubeFeature,
+    ChamferFeature, ChamferGroupFeature, CircleProfile, EdgeSelector, ExtrudeFeature,
+    FilletFeature, FilletGroupFeature, HoleFeature, Part, PolygonProfile, RectangleProfile,
+    TubeFeature,
 )
 
 PLANES = {"XY": Plane.XY, "XZ": Plane.XZ, "YZ": Plane.YZ}
@@ -45,7 +46,9 @@ def _apply_extrude(current, feature: ExtrudeFeature):
     plane = PLANES[feature.plane]
     if feature.offset:
         plane = plane.offset(feature.offset)
-    solid = extrude(plane * _sketch(feature.profile), amount=feature.distance)
+    amount = -feature.distance if feature.direction == "reverse" else feature.distance
+    solid = extrude(plane * _sketch(feature.profile), amount=amount,
+                    both=feature.direction == "both")
     return _combine(current, solid, feature.operation)
 
 
@@ -53,17 +56,38 @@ def _apply_hole(current, feature: HoleFeature):
     if current is None:
         raise EngineError("VALIDATION", "A hole cannot be the first feature")
     bounds = current.bounding_box()
-    top, bottom = bounds.max.Z, bounds.min.Z
-    height = (top - bottom) + 1.0 if feature.through else float(feature.depth)
-    start = top + 0.5
-    cutter = Pos(feature.x, feature.y, start) * Cylinder(
-        feature.diameter / 2, height, align=(Align.CENTER, Align.CENTER, Align.MAX))
+    radius = feature.diameter / 2
+    if feature.axis == "z":
+        x = feature.at[0] if feature.at else feature.x
+        y = feature.at[1] if feature.at else feature.y
+        top, bottom = bounds.max.Z, bounds.min.Z
+        height = (top - bottom) + 1.0 if feature.through else float(feature.depth)
+        cutter = Pos(x, y, top + 0.5) * Cylinder(
+            radius, height, align=(Align.CENTER, Align.CENTER, Align.MAX))
+    elif feature.axis == "x":
+        y, z = feature.at[1], feature.at[2]
+        length = (bounds.max.X - bounds.min.X) + 1.0 if feature.through else float(feature.depth) + 0.5
+        if feature.through:
+            cutter = Pos(bounds.min.X - 0.5, y, z) * Rotation(0, 90, 0) * Cylinder(
+                radius, length, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        else:
+            cutter = Pos(bounds.max.X + 0.5, y, z) * Rotation(0, -90, 0) * Cylinder(
+                radius, length, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    else:
+        x, z = feature.at[0], feature.at[2]
+        length = (bounds.max.Y - bounds.min.Y) + 1.0 if feature.through else float(feature.depth) + 0.5
+        if feature.through:
+            cutter = Pos(x, bounds.min.Y - 0.5, z) * Rotation(-90, 0, 0) * Cylinder(
+                radius, length, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        else:
+            cutter = Pos(x, bounds.max.Y + 0.5, z) * Rotation(90, 0, 0) * Cylinder(
+                radius, length, align=(Align.CENTER, Align.CENTER, Align.MIN))
     before = current.volume
     result = current - cutter
     if abs(result.volume - before) < 1e-9:
         raise EngineError(
             "VALIDATION",
-            f"Hole at ({feature.x}, {feature.y}) removes no material; check its position and depth",
+            f"Hole at axis {feature.axis} removes no material; check its position and depth",
         )
     return result
 
@@ -161,6 +185,24 @@ def _apply_tube(current, feature: TubeFeature):
     return _combine(current, tube, feature.operation)
 
 
+def _apply_fillet_group(current, feature: FilletGroupFeature, holes=()):
+    for index, operation in enumerate(feature.operations, 1):
+        try:
+            current = _apply_fillet(current, operation, holes)
+        except EngineError as exc:
+            raise EngineError(exc.code, f"Fillet group operation {index} failed: {exc}") from None
+    return current
+
+
+def _apply_chamfer_group(current, feature: ChamferGroupFeature, holes=()):
+    for index, operation in enumerate(feature.operations, 1):
+        try:
+            current = _apply_chamfer(current, operation, holes)
+        except EngineError as exc:
+            raise EngineError(exc.code, f"Chamfer group operation {index} failed: {exc}") from None
+    return current
+
+
 def build_part(spec: Part):
     """Rebuild the part from its ordered feature list."""
     current = None
@@ -173,8 +215,12 @@ def build_part(spec: Part):
             holes.append(feature)
         elif isinstance(feature, FilletFeature):
             current = _apply_fillet(current, feature, holes)
+        elif isinstance(feature, FilletGroupFeature):
+            current = _apply_fillet_group(current, feature, holes)
         elif isinstance(feature, ChamferFeature):
             current = _apply_chamfer(current, feature, holes)
+        elif isinstance(feature, ChamferGroupFeature):
+            current = _apply_chamfer_group(current, feature, holes)
         elif isinstance(feature, TubeFeature):
             current = _apply_tube(current, feature)
         else:
@@ -182,6 +228,53 @@ def build_part(spec: Part):
     if current is None:
         raise EngineError("VALIDATION", "Part has no features; add an extrude or tube first")
     return current
+
+
+def tight_bounds(shape, tolerance: float = 0.05):
+    """Mesh-based bounds; OCC's analytic box can be conservative around B-splines."""
+    try:
+        vertices, _ = shape.tessellate(tolerance)
+    except Exception:
+        return None
+    if not vertices:
+        return None
+    return {
+        "min": [min(v.X for v in vertices), min(v.Y for v in vertices), min(v.Z for v in vertices)],
+        "max": [max(v.X for v in vertices), max(v.Y for v in vertices), max(v.Z for v in vertices)],
+    }
+
+
+def edge_infos(shape) -> list[dict]:
+    """Stable, model-readable description of every B-rep edge."""
+    kinds = {
+        GeomType.LINE: "line",
+        GeomType.CIRCLE: "circle",
+        GeomType.BSPLINE: "bspline",
+    }
+    infos = []
+    for index, edge in enumerate(shape.edges()):
+        kind = kinds.get(edge.geom_type, "other")
+        center = _edge_center(edge)
+        info = {
+            "id": f"edge-{index:03d}",
+            "kind": kind,
+            "length_mm": float(edge.length),
+            "center_mm": [center.X, center.Y, center.Z],
+            "closed": bool(edge.is_closed),
+        }
+        if kind == "circle":
+            info["radius_mm"] = float(edge.radius)
+            info["diameter_mm"] = float(edge.radius * 2)
+        if kind == "line":
+            start, end = edge.position_at(0), edge.position_at(1)
+            delta = [end.X - start.X, end.Y - start.Y, end.Z - start.Z]
+            if edge.length > 1e-9:
+                ratios = [abs(value) / edge.length for value in delta]
+                dominant = max(range(3), key=lambda i: ratios[i])
+                if ratios[dominant] > 0.999:
+                    info["axis"] = "xyz"[dominant]
+        infos.append(info)
+    return infos
 
 
 def inspect_shape(shape, material_id: str) -> dict:
@@ -208,6 +301,7 @@ def inspect_shape(shape, material_id: str) -> dict:
             "min": [bounds.min.X, bounds.min.Y, bounds.min.Z],
             "max": [bounds.max.X, bounds.max.Y, bounds.max.Z],
         },
+        "bounds_tight_mm": tight_bounds(shape),
         "volume_mm3": volume,
         "mass_g": mass_g,
         "center_of_mass_mm": [center.X, center.Y, center.Z],

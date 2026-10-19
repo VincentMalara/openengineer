@@ -606,6 +606,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "build123d" },
+    { name = "matplotlib" },
     { name = "ocp-gordon" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -619,6 +620,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "build123d", specifier = "==0.10.0" },
+    { name = "matplotlib", specifier = "==3.11.2" },
     { name = "ocp-gordon", specifier = "==0.1.17" },
     { name = "pydantic", specifier = "==2.12.3" },
     { name = "pyyaml", specifier = "==6.0.3" },

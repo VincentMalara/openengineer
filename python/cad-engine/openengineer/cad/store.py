@@ -108,15 +108,39 @@ def part_path(root: Path, part_id: str) -> Path:
     return parts_dir(root) / f"{part_id}.json"
 
 
-def read_part(root: Path, part_id: str) -> Part:
+def state_file(root: Path) -> Path:
+    return parts_dir(root) / ".state.json"
+
+
+def file_digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def read_state(root: Path) -> dict:
+    path = state_file(root)
+    return read_json(path) if path.exists() else {}
+
+
+def read_part(root: Path, part_id: str, check: bool = True) -> Part:
     path = part_path(root, part_id)
     if not path.exists():
         raise EngineError("NOT_FOUND", f"Unknown part: {part_id}")
+    if check:
+        entry = read_state(root).get(part_id)
+        if entry is not None and entry.get("hash") != file_digest(path):
+            raise EngineError(
+                "CONFLICT",
+                f"Part {part_id} was modified outside the CAD tools; use cad_part_import to load an explicit spec",
+            )
     return Part.model_validate(read_json(path))
 
 
 def write_part(root: Path, spec: Part) -> None:
-    atomic_write_json(part_path(root, spec.id), spec.model_dump(mode="json", by_alias=True))
+    path = part_path(root, spec.id)
+    atomic_write_json(path, spec.model_dump(mode="json", by_alias=True))
+    state = read_state(root)
+    state[spec.id] = {"hash": file_digest(path), "updated": now()}
+    atomic_write_json(state_file(root), state)
 
 
 def next_part_id(root: Path) -> str:

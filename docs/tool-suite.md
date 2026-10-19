@@ -46,8 +46,15 @@ Les nouveaux outils utilisent le préfixe `cad_`. Les outils `openengineer_*` ex
 | `cad_part_rebuild` | Reconstruire et valider | 1 |
 | `cad_feature_extrude` | Extruder un profil | 1 |
 | `cad_feature_hole` | Perçage simple / traversant | 1 |
+| `cad_part_edges` | Inspection des arêtes (type, longueur, centre, rayon, axe) | 1 |
+| `cad_features_apply` | Appliquer plusieurs features, dry-run atomique | 1 |
+| `cad_feature_update` | Modifier une feature par id | 1 |
+| `cad_part_import` | Importer explicitement une spec éditée à la main | 1 |
+| `cad_feature_delete` | Supprimer une feature | 1 |
 | `cad_feature_fillet` | Congé sur sélection d'arêtes | 1 |
 | `cad_feature_chamfer` | Chanfrein, y compris arêtes de trous | 1 |
+| `cad_feature_fillet_group` | Groupe de congés atomique | 1 |
+| `cad_feature_chamfer_group` | Groupe de chanfreins atomique | 1 |
 | `cad_feature_tube` | Tube : diamètre extérieur, longueur, épaisseur ou diamètre intérieur | 1 |
 | `cad_feature_pattern` | Motif linéaire / circulaire | 2 |
 | `cad_feature_revolve` | Révolution | 2 |
@@ -82,6 +89,7 @@ Les nouveaux outils utilisent le préfixe `cad_`. Les outils `openengineer_*` ex
 | `cad_part_set_material` | Assigner un matériau | 1 |
 | `cad_material_create` | Matériau personnalisé | 2 |
 | `cad_part_export` | STEP, STL, glTF (3MF, DXF, SVG, PDF plus tard) | 1 |
+| `cad_render` | Rendu PNG iso/face/dessus/droite | 1 |
 | `cad_render` | Rendu PNG (iso, face, dessus, coupe) | 2 |
 | `cad_drawing_create` | Plan coté | 4 |
 
@@ -226,7 +234,7 @@ Chaque mutation :
 
 ### Slice 1 — Pièce paramétrique (fait)
 
-Outils : projet, pièce, extrude, hole, fillet, chamfer, tube, rebuild, check, export, matériaux.
+Outils : projet, pièce, extrude, hole, fillet, chamfer, tube, groupes, edges, batch, update/delete, render, export, matériaux.
 
 **Critère** : créer trois pièces différentes sans toucher au code, les modifier, les valider et exporter leurs STEP/STL. Vérifié avec une plaque percée/chanfreinée et un tube Ø100 × 80, épaisseur 2 mm.
 

@@ -5,20 +5,25 @@ import { EngineError, type EngineConfig } from '../../engineering-core/src/index
 import {
   runCadOperation,
   type CadCommit, type CadExport, type CadFeatureResult, type CadHistory,
-  type CadMaterialList, type CadPartBasic, type CadPartList, type CadPartSummary,
-  type CadProject, type CadProjectStatus,
+  type CadBatchResult, type CadDeleteResult, type CadEdgeReport, type CadMaterialList, type CadPartBasic,
+  type CadPartList, type CadPartSummary, type CadProject, type CadProjectStatus, type CadRender,
 } from '../../engineering-core/src/cad.js';
 
 class OpenEngineerError extends HarnessError {}
 
-const boundsSchema = {
+const boundsValueSchema = {
   type: 'object',
   additionalProperties: false,
-  required: true,
   properties: {
     min: { type: 'array', items: { type: 'number' }, required: true },
     max: { type: 'array', items: { type: 'number' }, required: true },
   },
+} as const;
+
+const boundsSchema = { ...boundsValueSchema, required: true } as const;
+const nullableBoundsSchema = {
+  oneOf: [boundsValueSchema, { type: 'null' }],
+  required: true,
 } as const;
 
 const checksSchema = {
@@ -59,6 +64,7 @@ const partSummarySchema = {
     features: featureArraySchema,
     checks: checksSchema,
     bounds_mm: boundsSchema,
+    bounds_tight_mm: nullableBoundsSchema,
     volume_mm3: { type: 'number', required: true },
     mass_g: { type: 'number', required: true },
     center_of_mass_mm: numberArraySchema,
@@ -74,10 +80,70 @@ const featureResultSchema = {
     feature: { type: 'json', required: true },
     checks: checksSchema,
     bounds_mm: boundsSchema,
+    bounds_tight_mm: nullableBoundsSchema,
     volume_mm3: { type: 'number', required: true },
     mass_g: { type: 'number', required: true },
     center_of_mass_mm: numberArraySchema,
     material_properties: { ...materialPropertiesSchema, required: true },
+  },
+} as const;
+
+const edgeSchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    id: { type: 'string', required: true },
+    kind: { type: 'string', required: true },
+    length_mm: { type: 'number', required: true },
+    center_mm: { type: 'array', items: { type: 'number' }, required: true },
+    closed: { type: 'boolean', required: true },
+    radius_mm: { type: 'number' },
+    diameter_mm: { type: 'number' },
+    axis: { type: 'string' },
+  },
+} as const;
+
+const batchResultSchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    part: { type: 'string', required: true },
+    applied: { type: 'number', required: true },
+    dry_run: { type: 'boolean', required: true },
+    feature_ids: { type: 'array', items: { type: 'string' }, required: true },
+    checks: checksSchema,
+    bounds_mm: boundsSchema,
+    bounds_tight_mm: nullableBoundsSchema,
+    volume_mm3: { type: 'number', required: true },
+    mass_g: { type: 'number', required: true },
+    center_of_mass_mm: numberArraySchema,
+    material_properties: { ...materialPropertiesSchema, required: true },
+  },
+} as const;
+
+const deleteResultSchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    part: { type: 'string', required: true },
+    deleted: { type: 'string', required: true },
+    features: { type: 'number', required: true },
+    checks: checksSchema,
+    bounds_mm: boundsSchema,
+    bounds_tight_mm: nullableBoundsSchema,
+    volume_mm3: { type: 'number', required: true },
+    mass_g: { type: 'number', required: true },
+    center_of_mass_mm: numberArraySchema,
+    material_properties: { ...materialPropertiesSchema, required: true },
+  },
+} as const;
+
+const renderResultSchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    part: { type: 'string', required: true },
+    view: { type: 'string', required: true },
+    path: { type: 'string', required: true },
+    relative_path: { type: 'string', required: true },
+    bytes: { type: 'number', required: true },
+    checks: checksSchema,
   },
 } as const;
 
@@ -163,7 +229,8 @@ function formatChecks(checks: CadPartSummary['checks']): string {
   return Object.entries(checks).map(([name, passed]) => `${name}=${passed ? 'pass' : 'FAIL'}`).join(', ');
 }
 
-function formatSize(value: { min: number[]; max: number[] }): string {
+function formatSize(value: { min: number[]; max: number[] } | null): string {
+  if (value === null) return 'unknown';
   const size = value.max.map((max, index) => max - (value.min[index] ?? 0));
   return `${size.map(formatNumber).join(' x ')} mm`;
 }
@@ -179,7 +246,7 @@ function featureLabel(feature: unknown): string {
 function formatPartSummary(value: CadPartSummary): string {
   return [
     `Part ${value.part} "${value.name}" - material ${value.material}`,
-    `Size: ${formatSize(value.bounds_mm)} | volume: ${value.volume_mm3.toFixed(1)} mm3 | mass: ${value.mass_g.toFixed(2)} g`,
+    `Size: ${formatSize(value.bounds_tight_mm ?? value.bounds_mm)} | volume: ${value.volume_mm3.toFixed(1)} mm3 | mass: ${value.mass_g.toFixed(2)} g`,
     `Checks: ${formatChecks(value.checks)}`,
     `Features: ${value.features.length}`,
   ].join('\n');
@@ -188,7 +255,7 @@ function formatPartSummary(value: CadPartSummary): string {
 function formatFeatureResult(value: CadFeatureResult): string {
   return [
     `Added ${featureLabel(value.feature)} to ${value.part}`,
-    `Size: ${formatSize(value.bounds_mm)} | volume: ${value.volume_mm3.toFixed(1)} mm3 | mass: ${value.mass_g.toFixed(2)} g`,
+    `Size: ${formatSize(value.bounds_tight_mm ?? value.bounds_mm)} | volume: ${value.volume_mm3.toFixed(1)} mm3 | mass: ${value.mass_g.toFixed(2)} g`,
     `Checks: ${formatChecks(value.checks)}`,
   ].join('\n');
 }
@@ -231,6 +298,28 @@ function formatMaterials(value: CadMaterialList): string {
   return value.materials
     .map(material => `- ${material.id} (${material.name}): ${material.density_kg_m3} kg/m3, yield ${material.yield_mpa} MPa`)
     .join('\n');
+}
+
+function formatEdges(value: CadEdgeReport): string {
+  const counts = new Map<string, number>();
+  for (const edge of value.edges) counts.set(edge.kind, (counts.get(edge.kind) ?? 0) + 1);
+  const summary = [...counts.entries()].map(([kind, count]) => `${kind}=${count}`).join(', ');
+  const lines = [`${value.part}: ${value.returned}/${value.total} edge(s) returned (${summary}).`];
+  for (const edge of value.edges.slice(0, 12)) {
+    const radius = edge.radius_mm === undefined ? '' : ` r=${formatNumber(edge.radius_mm)}`;
+    const axis = edge.axis === undefined ? '' : ` axis=${edge.axis}`;
+    lines.push(`- ${edge.id} ${edge.kind} length=${formatNumber(edge.length_mm)} mm center=[${edge.center_mm.map(formatNumber).join(', ')}]${radius}${axis}`);
+  }
+  return lines.join('\n');
+}
+
+function formatBatch(value: CadBatchResult): string {
+  return [
+    `${value.dry_run ? 'Validated' : 'Applied'} ${value.applied} feature(s) to ${value.part}${value.dry_run ? ' (dry run, not saved)' : ''}.`,
+    `Size: ${formatSize(value.bounds_tight_mm ?? value.bounds_mm)} | volume: ${value.volume_mm3.toFixed(1)} mm3 | mass: ${value.mass_g.toFixed(2)} g`,
+    `Checks: ${formatChecks(value.checks)}`,
+    `Feature ids: ${value.feature_ids.join(', ')}`,
+  ].join('\n');
 }
 
 async function runTool<T>(operation: () => Promise<T>): Promise<T> {
@@ -421,7 +510,7 @@ export function registerCadTools(ctx: Context, config: EngineConfig): void {
 
   ctx.tools.register(defineTool({
     name: 'cad_part_rebuild',
-    description: 'Force a rebuild of one part from its ordered features and return fresh measurements and checks. Read-only.',
+    description: 'Force a rebuild of one part from its ordered features and return fresh measurements and checks. Refuses a part file modified outside the CAD tools; use cad_part_import for an explicit hand-edited spec. Read-only.',
     parameters: {
       part: { type: 'string', required: true, description: 'Part id such as part-000001' },
     },
@@ -453,13 +542,14 @@ export function registerCadTools(ctx: Context, config: EngineConfig): void {
 
   ctx.tools.register(defineTool({
     name: 'cad_feature_extrude',
-    description: 'Append an extrude feature: a rectangle, circle or polygon profile on the XY, XZ or YZ plane, extruded along the plane normal. Profile coordinates are centred on the plane origin unless center is given. The first extrude must use operation add. The part is rebuilt and validated before the feature is kept.',
+    description: 'Append an extrude feature: a rectangle, circle or polygon profile on the XY, XZ or YZ plane, extruded along the plane normal. Profile coordinates are centred on the plane origin unless center is given. direction=reverse extrudes against the normal, both extrudes symmetrically. The first extrude must use operation add. The part is rebuilt and validated before the feature is kept.',
     parameters: {
       part: { type: 'string', required: true, description: 'Part id' },
       profile: { oneOf: profileSchema.oneOf, required: true, description: '2D profile in mm' },
       plane: { type: 'string', enum: ['XY', 'XZ', 'YZ'], description: 'Sketch plane; default XY' },
       offset: { type: 'number', description: 'Plane offset in mm along its normal; default 0' },
       distance: { type: 'number', required: true, description: 'Extrusion distance in mm, positive' },
+      direction: { type: 'string', enum: ['normal', 'reverse', 'both'], description: 'Extrusion direction; default normal' },
       operation: { type: 'string', enum: ['add', 'cut', 'intersect'], description: 'Boolean operation; default add' },
     },
     output: {
@@ -473,14 +563,16 @@ export function registerCadTools(ctx: Context, config: EngineConfig): void {
 
   ctx.tools.register(defineTool({
     name: 'cad_feature_hole',
-    description: 'Append a hole drilled along -Z from the top of the part. through=true drills through the whole Z range; through=false requires depth. The hole must remove material. Rebuilt and validated before it is kept.',
+    description: 'Append a hole along the X, Y or Z axis. Axis z drills from the top and uses x/y; axes x and y require at=[x,y,z]. through=true drills the full range; through=false requires depth. The hole must remove material. Rebuilt and validated before it is kept.',
     parameters: {
       part: { type: 'string', required: true, description: 'Part id' },
-      x: { type: 'number', required: true, description: 'Hole centre X in mm' },
-      y: { type: 'number', required: true, description: 'Hole centre Y in mm' },
+      x: { type: 'number', required: true, description: 'Hole centre X in mm (Z-axis holes; ignored when at is given)' },
+      y: { type: 'number', required: true, description: 'Hole centre Y in mm (Z-axis holes; ignored when at is given)' },
       diameter: { type: 'number', required: true, description: 'Hole diameter in mm' },
       through: { type: 'boolean', description: 'Through hole; default true' },
       depth: { type: 'number', description: 'Blind depth in mm; required when through is false' },
+      axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'Drill axis; default z' },
+      at: { type: 'array', items: { type: 'number' }, description: '3D hole centre [x,y,z]; required for x and y axes' },
     },
     output: {
       schema: featureResultSchema,
@@ -544,6 +636,181 @@ export function registerCadTools(ctx: Context, config: EngineConfig): void {
     },
     async execute(args, execution) {
       return runTool(() => runCadOperation<CadFeatureResult>(config, 'feature_tube', args, execution.signal));
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'cad_part_edges',
+    description: 'List B-rep edges with deterministic ids, kind, length, centre, circle radius/diameter and axis. Filter by kind, axis, minimum length or a bounding box. Read-only; use it before choosing fillet or chamfer selectors.',
+    parameters: {
+      part: { type: 'string', required: true, description: 'Part id' },
+      kind: { type: 'string', enum: ['all', 'line', 'circle', 'bspline', 'other'], description: 'Edge kind; default all' },
+      axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'Keep line edges parallel to this axis' },
+      min_length: { type: 'number', description: 'Minimum edge length in mm' },
+      box: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          min: { type: 'array', items: { type: 'number' }, required: true },
+          max: { type: 'array', items: { type: 'number' }, required: true },
+        },
+      },
+      limit: { type: 'number', description: 'Maximum edges returned; default 200' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          part: { type: 'string', required: true },
+          total: { type: 'number', required: true },
+          returned: { type: 'number', required: true },
+          edges: { type: 'array', items: edgeSchema, required: true },
+        },
+      } as const,
+      render: (_args, value) => [{ type: 'text', text: formatEdges(value as CadEdgeReport) }],
+    },
+    isConcurrencySafe: () => true,
+    async execute(args, execution) {
+      return runTool(() => runCadOperation<CadEdgeReport>(config, 'part_edges', args, execution.signal));
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'cad_features_apply',
+    description: 'Append several features in one atomic rebuild. With dry_run=true nothing is written; use it to test a fillet/chamfer chain or a candidate design. Returns the failing feature index on error.',
+    parameters: {
+      part: { type: 'string', required: true, description: 'Part id' },
+      features: { type: 'array', items: { type: 'json' }, required: true, description: 'Ordered feature payloads, same shape as the individual cad_feature_* tools' },
+      dry_run: { type: 'boolean', description: 'Validate without writing; default false' },
+    },
+    output: {
+      schema: batchResultSchema,
+      render: (_args, value) => [{ type: 'text', text: formatBatch(value as CadBatchResult) }],
+    },
+    async execute(args, execution) {
+      return runTool(() => runCadOperation<CadBatchResult>(config, 'features_apply', args, execution.signal));
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'cad_feature_update',
+    description: 'Update one existing feature by id without editing part JSON. id and type are immutable; parameters are merged into the feature. The part is rebuilt and validated before saving.',
+    parameters: {
+      part: { type: 'string', required: true, description: 'Part id' },
+      feature_id: { type: 'string', required: true, description: 'Feature id such as feature-003' },
+      parameters: { type: 'object', additionalProperties: true, required: true, description: 'Fields to merge, for example { "radius": 2.5 }' },
+    },
+    output: {
+      schema: featureResultSchema,
+      render: (_args, value) => [{ type: 'text', text: formatFeatureResult(value as CadFeatureResult) }],
+    },
+    async execute(args, execution) {
+      return runTool(() => runCadOperation<CadFeatureResult>(config, 'feature_update', args, execution.signal));
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'cad_feature_delete',
+    description: 'Delete one feature by id and rebuild the remaining chain. Refuses to delete the last feature. Use cad_part_edges after deletion to inspect the result.',
+    parameters: {
+      part: { type: 'string', required: true, description: 'Part id' },
+      feature_id: { type: 'string', required: true, description: 'Feature id such as feature-003' },
+    },
+    output: {
+      schema: deleteResultSchema,
+      render: (_args, value) => {
+        const result = value as unknown as { deleted: string; features: number; volume_mm3: number; mass_g: number };
+        return [{ type: 'text', text: `Deleted ${result.deleted}; ${result.features} feature(s) remain. Volume ${result.volume_mm3.toFixed(1)} mm3, mass ${result.mass_g.toFixed(2)} g.` }];
+      },
+    },
+    async execute(args, execution) {
+      return runTool(() => runCadOperation<CadDeleteResult>(config, 'feature_delete', args, execution.signal));
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'cad_feature_fillet_group',
+    description: 'Apply an ordered group of fillets in one atomic feature. Each operation has a radius and a selector. If one operation fails, the whole group is rejected and nothing is written.',
+    parameters: {
+      part: { type: 'string', required: true, description: 'Part id' },
+      operations: {
+        type: 'array', required: true,
+        items: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            radius: { type: 'number', required: true, description: 'Fillet radius in mm' },
+            selector: { oneOf: selectorSchema.oneOf, required: true, description: 'Edge selector' },
+          },
+        },
+      },
+    },
+    output: {
+      schema: featureResultSchema,
+      render: (_args, value) => [{ type: 'text', text: formatFeatureResult(value as CadFeatureResult) }],
+    },
+    async execute(args, execution) {
+      return runTool(() => runCadOperation<CadFeatureResult>(config, 'feature_fillet_group', args, execution.signal));
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'cad_feature_chamfer_group',
+    description: 'Apply an ordered group of chamfers in one atomic feature. Each operation has distance, optional distance2 and a selector. If one operation fails, the whole group is rejected.',
+    parameters: {
+      part: { type: 'string', required: true, description: 'Part id' },
+      operations: {
+        type: 'array', required: true,
+        items: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            distance: { type: 'number', required: true, description: 'Chamfer distance in mm' },
+            distance2: { type: 'number', description: 'Optional asymmetric second distance' },
+            selector: { oneOf: selectorSchema.oneOf, required: true, description: 'Edge selector' },
+          },
+        },
+      },
+    },
+    output: {
+      schema: featureResultSchema,
+      render: (_args, value) => [{ type: 'text', text: formatFeatureResult(value as CadFeatureResult) }],
+    },
+    async execute(args, execution) {
+      return runTool(() => runCadOperation<CadFeatureResult>(config, 'feature_chamfer_group', args, execution.signal));
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'cad_part_import',
+    description: 'Explicit escape hatch for a hand-edited part spec. Merges the provided spec fields (name, material, features) over the current part, validates and rebuilds under the project lock, then records the new hash. id and created are preserved. Prefer cad_feature_* and cad_feature_update for normal edits.',
+    parameters: {
+      part: { type: 'string', required: true, description: 'Part id' },
+      spec: { type: 'object', additionalProperties: true, required: true, description: 'Partial or complete part spec: name, material, features' },
+    },
+    output: {
+      schema: partSummarySchema,
+      render: (_args, value) => [{ type: 'text', text: formatPartSummary(value as CadPartSummary) }],
+    },
+    async execute(args, execution) {
+      return runTool(() => runCadOperation<CadPartSummary>(config, 'part_import', args, execution.signal));
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'cad_render',
+    description: 'Render a shaded PNG preview of one part (iso, front, top or right) into the artifacts directory. Returns the path and byte size; the image is for human inspection.',
+    parameters: {
+      part: { type: 'string', required: true, description: 'Part id' },
+      view: { type: 'string', enum: ['iso', 'front', 'top', 'right'], description: 'Camera view; default iso' },
+      size: { type: 'number', description: 'Image width in pixels; default 1200' },
+    },
+    output: {
+      schema: renderResultSchema,
+      render: (_args, value) => {
+        const result = value as unknown as CadRender;
+        return [{ type: 'text', text: `Rendered ${result.view} view to ${result.path} (${result.bytes} bytes).` }];
+      },
+    },
+    async execute(args, execution) {
+      return runTool(() => runCadOperation<CadRender>(config, 'part_render', args, execution.signal));
     },
   }));
 

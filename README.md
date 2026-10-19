@@ -71,14 +71,19 @@ Slice 1 covers single parts:
 
 - `cad_project_create/status/commit/history` — draft and immutable revisions.
 - `cad_part_create/list/get/rebuild/set_material`, `cad_material_list`.
-- `cad_feature_extrude` — rectangle, circle or polygon on XY, XZ or YZ. Profile coordinates are centred on the plane origin unless `center` is given; the first extrude must be `add`.
-- `cad_feature_hole` — through or blind hole along −Z from the top of the part.
+- `cad_feature_extrude` — rectangle, circle or polygon on XY, XZ or YZ; `direction` normal/reverse/both. Profile coordinates are centred on the plane origin unless `center` is given; the first extrude must be `add`.
+- `cad_feature_hole` — through or blind hole along X, Y or Z; `at` gives a 3D centre for X/Y holes.
 - `cad_feature_fillet` — all edges, edges parallel to an axis, edges inside a box, circular edges, or hole edges.
 - `cad_feature_chamfer` — same selectors as fillet; `{ "kind": "holes", "z": "top" }` chamfers hole entry edges.
 - `cad_feature_tube` — a hollow cylinder in one call: outer diameter, length, and either inner diameter or wall thickness. Use it directly for tubes, pipes and bushings instead of composing two extrusions.
-- `cad_part_export` — STEP, STL or glTF.
+- `cad_part_export` — STEP, STL or glTF; `cad_render` — shaded PNG preview.
+- `cad_part_edges` — inspect B-rep edges (kind, length, centre, radius, axis) before choosing a selector.
+- `cad_features_apply` — append several features in one atomic rebuild; `dry_run` validates without writing.
+- `cad_part_import` — explicit, validated import of a hand-edited spec; direct JSON edits are otherwise rejected with `CONFLICT`.
+- `cad_feature_update` / `cad_feature_delete` — edit the chain without touching JSON.
+- `cad_feature_fillet_group` / `cad_feature_chamfer_group` — several radii/selectors in one atomic feature.
 
-Every mutation rebuilds the part, validates one watertight solid, and measures volume, mass and centre of mass before it is kept. Feature order is the source of truth; there is no hidden state and no generated Python.
+Every mutation rebuilds the part, validates one watertight solid, and measures volume, mass and centre of mass before it is kept. `bounds_tight_mm` uses a mesh-based bound because OCC's analytic box is conservative around B-splines. Parts are hash-guarded: a file edited outside the tools must go through `cad_part_import`. Feature order is the source of truth; there is no hidden state and no generated Python.
 
 > Create a project named demo, create an 80 × 40 × 6 mm aluminium plate with profile center [40, 20] so its corner is at the origin, drill two 6 mm through holes at (20, 20) and (60, 20), fillet the vertical edges with radius 3, chamfer the hole entries by 0.5 mm, then add a tube with outer diameter 100 mm, wall 2 mm and length 80 mm. Export both STEP files and commit.
 
@@ -96,7 +101,7 @@ Assembly, BOM, simulation and topology optimization are **not implemented yet**;
 
 The script creates a temporary project, builds an 80 × 40 × 6 mm plate with holes, fillets and chamfers, plus a 100 mm tube, prints its measurements and exports STEP/STL. To test the same path through the plugin, run `pnpm build`, regenerate the Harness patch with `node scripts/harness-config.mjs`, restart the Harness web server with that patch, then ask the prompt above. The compiled plugin exposes the `cad_*` tools alongside the older `openengineer_*` ones.
 
-Tests: `.venv/bin/python -m pytest -q` (23 tests) and `pnpm test` (11 tests, including a real Cordis registry run). `uv run pytest` may fail if the sandbox cannot write `~/.cache/uv`; the project virtualenv is the fallback.
+Tests: `.venv/bin/python -m pytest -q` (26 tests) and `pnpm test` (12 tests, including a real Cordis registry run). `uv run pytest` may fail if the sandbox cannot write `~/.cache/uv`; the project virtualenv is the fallback.
 
 The bundled dimensions are **synthetic test data**, not measurements taken from a physical part. Their provenance labels exercise the schema; replace them with your own observations before reverse engineering a real component.
 

@@ -175,3 +175,91 @@ def test_cad_cli_protocol(tmp_path):
     payload = json.loads(proc.stdout)
     assert payload["ok"] is False
     assert payload["code"] == "VALIDATION"
+
+
+def test_cad_edges_batch_groups_update_delete_and_render(tmp_path):
+    call(tmp_path, "project_create", name="demo")
+    part = call(tmp_path, "part_create", name="block", material="alu-6061")["part"]
+    ext = call(tmp_path, "feature_extrude", part=part,
+               profile={"shape": "rectangle", "width": 40, "height": 40, "center": [20, 20]},
+               distance=5)
+    assert ext["bounds_tight_mm"] is not None
+    assert ext["bounds_tight_mm"]["max"] == pytest.approx([40, 40, 5], abs=0.1)
+
+    edges = call(tmp_path, "part_edges", part=part, kind="line", axis="z")
+    assert edges["returned"] >= 4
+    assert all(edge["axis"] == "z" for edge in edges["edges"])
+    boxed = call(tmp_path, "part_edges", part=part,
+                 box={"min": [0, 0, 0], "max": [40, 40, 10]})
+    assert boxed["returned"] > 0
+
+    dry = call(tmp_path, "features_apply", part=part,
+               features=[{"type": "hole", "x": 10, "y": 10, "diameter": 4}], dry_run=True)
+    assert dry["dry_run"] is True and dry["applied"] == 1
+    assert len(call(tmp_path, "part_get", part=part)["features"]) == 1
+
+    call(tmp_path, "features_apply", part=part,
+         features=[{"type": "hole", "x": 10, "y": 10, "diameter": 4}])
+    group = call(tmp_path, "feature_fillet_group", part=part, operations=[
+        {"radius": 1.0, "selector": {"kind": "all"}},
+    ])
+    assert group["feature"]["type"] == "fillet_group"
+    feature_id = group["feature"]["id"]
+
+    updated = call(tmp_path, "feature_update", part=part, feature_id=feature_id,
+                   parameters={"operations": [{"radius": 0.5, "selector": {"kind": "all"}}]})
+    assert updated["feature"]["operations"][0]["radius"] == 0.5
+
+    with pytest.raises(EngineError):
+        call(tmp_path, "feature_fillet_group", part=part, operations=[
+            {"radius": 1000.0, "selector": {"kind": "all"}},
+        ])
+    assert len(call(tmp_path, "part_get", part=part)["features"]) == 3
+
+    deleted = call(tmp_path, "feature_delete", part=part, feature_id=feature_id)
+    assert deleted["deleted"] == feature_id
+    assert deleted["features"] == 2
+
+    rendered = call(tmp_path, "part_render", part=part, view="iso", size=500)
+    assert Path(rendered["path"]).exists()
+    assert rendered["bytes"] > 1000
+
+
+def test_cad_extrude_direction_and_hole_axis(tmp_path):
+    call(tmp_path, "project_create", name="demo")
+    part = call(tmp_path, "part_create", name="block")["part"]
+    reversed_extrude = call(tmp_path, "feature_extrude", part=part,
+                            profile={"shape": "rectangle", "width": 40, "height": 40, "center": [20, 20]},
+                            distance=10, direction="reverse")
+    assert reversed_extrude["bounds_mm"]["min"][2] == pytest.approx(-10)
+    assert reversed_extrude["bounds_mm"]["max"][2] == pytest.approx(0)
+
+    through = call(tmp_path, "feature_hole", part=part, x=0, y=0, diameter=4,
+                   axis="x", at=[20, 20, -5])
+    assert through["volume_mm3"] < reversed_extrude["volume_mm3"]
+    around_y = call(tmp_path, "feature_hole", part=part, x=0, y=0, diameter=3,
+                    axis="y", at=[20, 20, -5])
+    assert around_y["volume_mm3"] < through["volume_mm3"]
+
+    with pytest.raises(ValidationError):
+        call(tmp_path, "feature_hole", part=part, x=0, y=0, diameter=4, axis="x")
+
+
+def test_cad_hash_guard_and_part_import(tmp_path):
+    call(tmp_path, "project_create", name="demo")
+    part = call(tmp_path, "part_create", name="guarded")["part"]
+    call(tmp_path, "feature_extrude", part=part,
+         profile={"shape": "rectangle", "width": 20, "height": 20}, distance=5)
+    path = tmp_path / "parts" / f"{part}.json"
+    data = json.loads(path.read_text())
+    data["name"] = "hand edited"
+    path.write_text(json.dumps(data))
+
+    with pytest.raises(EngineError) as caught:
+        call(tmp_path, "part_get", part=part)
+    assert caught.value.code == "CONFLICT"
+
+    imported = call(tmp_path, "part_import", part=part,
+                    spec={"name": "imported", "features": data["features"]})
+    assert imported["name"] == "imported"
+    assert call(tmp_path, "part_get", part=part)["name"] == "imported"
