@@ -84,6 +84,8 @@ Every mutation rebuilds the part, validates one watertight solid, and measures v
 
 The generalisation rule: the model composes **primitives and ordered features**, it does not run per-part code. A tube is one `cad_feature_tube`; a bracket is an extrude plus holes and fillets. New part families are added by adding primitives or feature types, never by hardcoding a recipe for one client.
 
+To connect an open Autodesk Fusion session through MCP (`mcp__fusion__*` tools), see [docs/fusion-mcp.md](docs/fusion-mcp.md).
+
 Assembly, BOM, simulation and topology optimization are **not implemented yet**; the intended contract is in [docs/tool-suite.md](docs/tool-suite.md).
 
 ### Try it
