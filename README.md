@@ -51,9 +51,36 @@ Two read-only tools support follow-up questions without rebuilding: `openenginee
 
 > List the committed revisions, then inspect the latest one and summarise its dimensions and assumptions.
 
-A successful call returns a structured result: revision, parent, measured bounds and volume, per-check booleans, hole boundary circles and artifact paths. The model sees a readable summary rather than raw JSON. Failures carry a stable code — `VALIDATION`, `PATH`, `TIMEOUT`, `ABORTED`, `LOCK`, `EXPORT`, `GEOMETRY`, `IO`, `NOT_FOUND` or `ENGINE` — alongside a human-readable message.
+A successful call returns a structured result: revision, parent, measured bounds and volume, per-check booleans, hole boundary circles and artifact paths. The model sees a readable summary rather than raw JSON. Failures carry a stable code — `VALIDATION`, `PATH`, `TIMEOUT`, `ABORTED`, `LOCK`, `EXPORT`, `GEOMETRY`, `IO`, `NOT_FOUND`, `CONFLICT` or `ENGINE` — alongside a human-readable message.
 
 The plugin uses the provider configured in Harness; OpenEngineer does not implement provider adapters or require its own API key. The automated integration test invokes the real Harness registry without an LLM or Web UI. Live provider selection and natural-language behavior are **not yet acceptance-tested**.
+
+## CAD tool suite
+
+The plugin also registers a generic, deterministic `cad_*` suite. A project lives in the configured root:
+
+```
+project.json        # name, units, creation time
+parts/*.json        # ordered feature lists
+artifacts/          # STEP, STL, glTF, content-addressed by part spec
+revisions/          # immutable snapshots with a manifest of hashes
+.lock               # advisory lock for mutations
+```
+
+Slice 1 covers single parts:
+
+- `cad_project_create/status/commit/history` — draft and immutable revisions.
+- `cad_part_create/list/get/rebuild/set_material`, `cad_material_list`.
+- `cad_feature_extrude` — rectangle, circle or polygon on XY, XZ or YZ. Profile coordinates are centred on the plane origin unless `center` is given; the first extrude must be `add`.
+- `cad_feature_hole` — through or blind hole along −Z from the top of the part.
+- `cad_feature_fillet` — all edges, edges parallel to an axis, or edges inside a box.
+- `cad_part_export` — STEP, STL or glTF.
+
+Every mutation rebuilds the part, validates one watertight solid, and measures volume, mass and centre of mass before it is kept. Feature order is the source of truth; there is no hidden state and no generated Python.
+
+> Create a project named demo, create an 80 × 40 × 6 mm aluminium plate with profile center [40, 20] so its corner is at the origin, drill two 6 mm through holes at (20, 20) and (60, 20), fillet the vertical edges with radius 3, export STEP and commit the revision.
+
+Assembly, BOM, simulation and topology optimization are **not implemented yet**; the intended contract is in [docs/tool-suite.md](docs/tool-suite.md).
 
 The bundled dimensions are **synthetic test data**, not measurements taken from a physical part. Their provenance labels exercise the schema; replace them with your own observations before reverse engineering a real component.
 

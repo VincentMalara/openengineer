@@ -6,6 +6,7 @@ import {
   buildBracket, inspectRevision, listRevisions, EngineError,
   type BuildResult, type EngineConfig, type Json, type RevisionDetail, type RevisionList,
 } from '../../engineering-core/src/index.js';
+import { registerCadTools } from './cad-tools.js';
 
 export const name = 'openengineer';
 export const inject = ['tools'];
@@ -231,6 +232,7 @@ export const Config: Schema<EngineConfig> = Schema.object({
 });
 
 export function apply(ctx: Context, config: EngineConfig) {
+  registerCadTools(ctx, config);
   ctx.tools.register(defineTool({
     name: 'openengineer_build_bracket',
     description: 'Build or modify an L mounting bracket from project YAML in mm, validate its solid and STEP roundtrip, and save an immutable design revision. Missing dimensions must be measured or explicitly labeled assumed. Returns the revision, measured bounds, volume, per-check results, hole boundary circles and artifact paths. Failures carry a stable code (VALIDATION, PATH, TIMEOUT, ABORTED, LOCK, EXPORT, GEOMETRY, IO, NOT_FOUND, ENGINE). Does not certify strength or manufacturing.',

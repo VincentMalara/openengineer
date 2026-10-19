@@ -15,10 +15,11 @@ export type EngineErrorCode =
   | 'GEOMETRY'
   | 'IO'
   | 'NOT_FOUND'
+  | 'CONFLICT'
   | 'ENGINE';
 
 const ENGINE_ERROR_CODES: ReadonlySet<string> = new Set<EngineErrorCode>([
-  'VALIDATION', 'PATH', 'TIMEOUT', 'ABORTED', 'LOCK', 'EXPORT', 'GEOMETRY', 'IO', 'NOT_FOUND', 'ENGINE',
+  'VALIDATION', 'PATH', 'TIMEOUT', 'ABORTED', 'LOCK', 'EXPORT', 'GEOMETRY', 'IO', 'NOT_FOUND', 'CONFLICT', 'ENGINE',
 ]);
 
 const REVISION_ID = /^revision-\d{6}-[0-9a-f]{8}$/;
@@ -235,7 +236,7 @@ function summary(record: StoredRecord, directory: string): RevisionSummary {
   };
 }
 
-function normalizeCode(code: string | undefined): EngineErrorCode {
+export function normalizeEngineCode(code: string | undefined): EngineErrorCode {
   return code !== undefined && ENGINE_ERROR_CODES.has(code) ? code as EngineErrorCode : 'ENGINE';
 }
 
@@ -256,7 +257,7 @@ function engineFailure(
     response = undefined;
   }
   if (response?.ok === false) {
-    return new EngineError(normalizeCode(response.code), response.error ?? 'CAD operation failed');
+    return new EngineError(normalizeEngineCode(response.code), response.error ?? 'CAD operation failed');
   }
   if (error.killed === true || error.signal === 'SIGTERM') {
     return new EngineError('TIMEOUT', `CAD operation timed out after ${config.timeoutMs} ms`, { cause: error });

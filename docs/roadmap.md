@@ -1,6 +1,6 @@
 # Feuille de route — ce qu'il reste à faire
 
-État vérifié le 19/10/2026 : 12 tests pytest et 3 tests Vitest passent, le plugin s'enregistre via le vrai registre Cordis, et aucune régression n'est connue. Le dépôt Git n'a en revanche **aucun commit**, la CI n'a jamais tourné et aucune licence n'est choisie.
+État vérifié le 19/10/2026 : 22 tests pytest et 10 tests Vitest passent, le dépôt est publié, la CI Ubuntu est verte et la licence MIT est en place. La suite `cad_*` slice 1 (pièce paramétrique) est implémentée.
 
 ## Déjà en place (à préserver)
 
@@ -10,6 +10,7 @@
 - Un outil Harness (`openengineer_build_bracket`) avec test d'intégration de bout en bout.
 - Verrou POSIX, chemins confinés à la racine, sortie subprocess bornée, staging atomique.
 - `part.step`, `parameters.yaml`, `record.json`, `report.md` par révision.
+- Suite `cad_*` slice 1 : projet, pièces, features ordonnées, validation, matériaux, exports STEP/STL/glTF, révisions.
 
 Le contrat à ne pas casser : **aucune donnée inventée silencieusement, aucune révision partielle, aucun code généré exécuté sans isolation revue.**
 
@@ -19,6 +20,8 @@ Le contrat à ne pas casser : **aucune donnée inventée silencieusement, aucune
 |---|---|---|---|
 | P0 | Dépôt partageable : commit, licence, CI verte | S | — |
 | P1 | Contrat du plugin : sortie lisible, erreurs typées, outils de lecture | M | P0 |
+| **S1** | **Suite CAD slice 1 : pièce paramétrique, STEP, révisions** | **M** | **P1** |
+| **S2** | **Suite CAD slice 2 : assemblage, interférences, BOM** | **M** | **S1** |
 | P2 | Acceptance réelle avec un provider LLM | S | P1 |
 | P3 | Robustesse et portabilité (Windows, reprise après crash, intégrité) | M | P1 |
 | P4 | Deuxième pièce, schéma enrichi, aperçu, exports fabrication | L | P2 |
@@ -53,10 +56,33 @@ Effort indicatif : S < 1 jour, M = 1 à 3 jours, L = 1 à 2 semaines.
   - [x] aucune révision publiée si l'import STEP échoue.
 - [x] Rendre le dossier de sortie configurable (`artifactsDir`), avec confinement à la racine.
 - [x] Ajouter des outils de lecture sans rebuild : `openengineer_list_revisions` et `openengineer_inspect_revision` (record, rapport, paramètres).
-- [ ] Permettre l'édition des trous : soit un override `holes`, soit un outil dédié. Aujourd'hui seuls les 4 paramètres scalaires sont modifiables, les trous exigent une édition manuelle du YAML.
-- [ ] Documenter le schéma YAML comme contrat public (version de schéma, champs, invariants).
+- [x] Édition des trous : couverte par la suite `cad_*` (`cad_feature_hole`) ; l'ancien outil bracket reste limité aux quatre scalaires.
+- [x] Schéma public : remplacé par le schéma JSON des features documenté dans [tool-suite.md](tool-suite.md).
 
 **Critère d'acceptation** : depuis le chat, l'agent peut construire, modifier, lister et inspecter une révision sans parser de JSON brut, et chaque échec produit un code d'erreur stable.
+
+## S1 — Suite CAD : pièce paramétrique (fait)
+
+- [x] Projet : `cad_project_create/status/commit/history`, brouillon et révisions immuables.
+- [x] Pièces : `cad_part_create/list/get/rebuild/set_material`, `cad_material_list`.
+- [x] Features ordonnées : `cad_feature_extrude` (rectangle, cercle, polygone ; XY/XZ/YZ), `cad_feature_hole` (traversant/aveugle), `cad_feature_fillet` (toutes, parallèles à un axe, boîte).
+- [x] Reconstruction déterministe et validation avant écriture : solide unique, valide, volume, masse, centre de masse.
+- [x] Exports : `cad_part_export` STEP/STL/glTF, adressés par hash de spec.
+- [x] Erreurs typées `CONFLICT` / `NOT_FOUND` / `VALIDATION` / `GEOMETRY`.
+- [x] Tests : 22 pytest, 10 Vitest.
+
+**Critère** : créer trois pièces différentes sans toucher au code, les modifier, les valider et exporter leurs STEP/STL.
+
+## S2 — Suite CAD : assemblage et BOM (suivant)
+
+- [ ] `cad_assembly_create/list/add_instance/remove_instance`.
+- [ ] Transformations fixes, détection d'interférences.
+- [ ] `cad_assembly_export` STEP d'assemblage avec hiérarchie.
+- [ ] `cad_bom_generate/export` CSV/XLSX, quantités, matériaux, masses.
+- [ ] `cad_render` PNG et vue éclatée.
+- [ ] Mates et solveur DOF en S3.
+
+**Critère** : assembler cinq pièces, détecter un chevauchement de 0,1 mm, produire une BOM juste.
 
 ## P2 — Acceptance réelle
 
@@ -113,9 +139,9 @@ Effort indicatif : S < 1 jour, M = 1 à 3 jours, L = 1 à 2 semaines.
 
 ## Ordre recommandé pour les 3 prochaines actions
 
-1. Acceptance réelle dans la Web UI.
-2. Édition des trous, puis documentation du schéma YAML.
-3. Deuxième recette **ou** aperçu visuel (selon la démo visée).
+1. S2 : assemblage, interférences et BOM.
+2. Acceptance réelle dans la Web UI sur la suite `cad_*`.
+3. Simulation statique (S3), puis optimisation topologique (S4).
 
 ## Risques principaux
 

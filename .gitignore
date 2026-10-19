@@ -9,3 +9,5 @@ artifacts/
 *.egg-info/
 harness.local.yaml
 .DS_Store
+.lock
+revisions/
