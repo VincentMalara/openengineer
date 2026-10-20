@@ -1,9 +1,13 @@
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 const root = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = process.env.CAD_ROOT ? resolve(process.env.CAD_ROOT) : root;
+const patchPath = process.env.HARNESS_PATCH
+  ? resolve(process.env.HARNESS_PATCH)
+  : resolve(root, 'harness.local.yaml');
 const entries = [{id: 'openengineer', name: resolve(root, 'dist/harness-plugin/src/index.js'), config: {
-  root, python: resolve(root, '.venv/bin/python'), timeoutMs: 120000,
+  root: projectRoot, python: resolve(root, '.venv/bin/python'), timeoutMs: 120000,
 }}];
 if (process.env.FUSION_MCP === '1') {
   entries.push({id: 'mcp-fusion', name: '@deepseek-ai/dsh-mcp-client', config: {
@@ -16,5 +20,6 @@ if (process.env.FUSION_MCP === '1') {
 }
 const patch = [{insert: entries}];
 // JSON is valid YAML. The generated absolute paths are local, not portable source config.
-await writeFile(resolve(root, 'harness.local.yaml'), JSON.stringify(patch, null, 2) + '\n');
-console.log(resolve(root, 'harness.local.yaml'));
+await mkdir(dirname(patchPath), { recursive: true });
+await writeFile(patchPath, JSON.stringify(patch, null, 2) + '\n');
+console.log(patchPath);

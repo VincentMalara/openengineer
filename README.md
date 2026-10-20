@@ -93,6 +93,25 @@ To connect an open Autodesk Fusion session through MCP (`mcp__fusion__*` tools),
 
 Assembly, BOM, simulation and topology optimization are **not implemented yet**; the intended contract is in [docs/tool-suite.md](docs/tool-suite.md).
 
+### Starting a new project
+
+One plugin instance owns **one project root**: `project.json`, `parts/`, `artifacts/` and `revisions/` live directly in that directory. Calling `cad_project_create` in a root that already has a project returns `CONFLICT`.
+
+To start a separate project, use a new empty directory and a separate server/port:
+
+```sh
+mkdir -p ~/Developer/cad-projects/my-project
+cd /Users/melissamalara/Developer/cursor_for_cad
+CAD_ROOT="$HOME/Developer/cad-projects/my-project" \
+HARNESS_PATCH="$PWD/harness.my-project.yaml" \
+node scripts/harness-config.mjs
+npx @deepseek-ai/dsh@0.2.1-rc.2 web \
+  --patch "$PWD/harness.my-project.yaml" \
+  --port 61119
+```
+
+Open the printed URL, start a new conversation, then ask it to create the project (`cad_project_create`). The plugin code and Python interpreter stay in this checkout; only the project data moves to the new root. The demo server on port 61118 keeps using `harness.local.yaml`.
+
 ### Try it
 
 ```sh
